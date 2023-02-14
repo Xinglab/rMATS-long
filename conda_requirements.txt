@@ -1,0 +1,8 @@
+bioconductor-biocparallel=1.32.*
+bioconductor-drimseq=1.26.*
+networkx=2.8.*
+numpy=1.24.*
+pandas=1.5.*
+python=3.10.*
+r-base=4.2.*
+r-ggplot2=3.4.*
