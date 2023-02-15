@@ -24,7 +24,7 @@ transcript structure events for any given pair of transcript isoforms.
 # Load required libraries
 import sys, argparse
 from numpy import sort
-from pandas import DataFrame, read_csv
+from pandas import DataFrame, read_csv, concat
 from networkx import all_simple_paths, get_node_attributes, DiGraph
 
 def ClassifyBubble(bubble, attributes):
@@ -237,8 +237,11 @@ def ParseGTF(infile):
                 exonStart, exonEnd = -sort(-exonDF[4]), -sort(-exonDF[3])
 
             # Update inputDF with information about current transcript
-            inputDF = inputDF.append(DataFrame([[transcript, chrom, strand, exonStart.tolist(), exonEnd.tolist()]],
-                columns = ['transcript_ID', 'chrom', 'strand', 'exonStart', 'exonEnd']))
+            inputDF = concat([
+                inputDF,
+                DataFrame([[transcript, chrom, strand, exonStart.tolist(), exonEnd.tolist()]],
+                          columns = ['transcript_ID', 'chrom', 'strand', 'exonStart', 'exonEnd'])
+            ])
 
         # Smooth out transcript ends if terminal exons of both transcript isoforms are overlapping
         inputDF = SmoothEnds(inputDF)
@@ -292,8 +295,11 @@ def main():
             coord = ';'.join([chrom + ':' + x + ':' + strand for x in coord.split(';')])
 
         # Update outputDF with information about each bubble
-        outputDF = outputDF.append(DataFrame([[inputDF['transcript_ID'].iloc[0], inputDF['transcript_ID'].iloc[1], event, coord]],
-            columns = ['transcript1', 'transcript2', 'event', 'coordinates']))
+        outputDF = concat([
+            outputDF,
+            DataFrame([[inputDF['transcript_ID'].iloc[0], inputDF['transcript_ID'].iloc[1], event, coord]],
+                      columns = ['transcript1', 'transcript2', 'event', 'coordinates'])
+        ])
 
     # Print contents of outputDF to outfile
     outputDF.to_csv(outfile, sep='\t', index=False)
