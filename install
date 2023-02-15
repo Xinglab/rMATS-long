@@ -1,0 +1,18 @@
+#!/bin/bash
+
+function install_conda() {
+  conda create --prefix "${CONDA_ENV_PREFIX}" || return 1
+  conda activate "${CONDA_ENV_PREFIX}" || return 1
+  conda install -c conda-forge -c bioconda --file \
+        './conda_requirements.txt' || return 1
+  conda deactivate || return 1
+}
+
+function main() {
+  # need to use the setup that conda init writes to .bashrc
+  source "${HOME}/.bashrc" || return 1
+  CONDA_ENV_PREFIX='./conda_env'
+  install_conda || return 1
+}
+
+main "$@"
