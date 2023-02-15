@@ -2,7 +2,7 @@
 
 ## About
 
-rMATS-long is a collection of tool for analyzing long-read data
+rMATS-long is a collection of tools for analyzing long-read data
 
 ## Table of Contents
 
@@ -163,7 +163,7 @@ From `./differential_usage_out/differential_transcripts.tsv` the top row is:
 gene_id	feature_id	lr	df	pvalue	adj_pvalue
 TODO_gene	TODO_transcript	0.00	1	1.00	1.00
 ```
-The `gene_id` and `feature_id` from that row can be used with scripts/visualize_isoforms.py.
+The `gene_id` and `feature_id` from that row can be used with [scripts/visualize_isoforms.py](scripts/visualize_isoforms.py).
 <!-- TODO more details -->
 
 The differences among transcripts within that gene can be determined with:

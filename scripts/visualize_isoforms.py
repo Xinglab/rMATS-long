@@ -4,10 +4,9 @@ import argparse
 def parse_args():
     parser = argparse.ArgumentParser(
         description=('Visualize structure and abundance of isoforms'))
-    parser.add_argument(
-        '--gene-id',
-        required=True,
-        help='The gene_id to visualize')
+    parser.add_argument('--gene-id',
+                        required=True,
+                        help='The gene_id to visualize')
     parser.add_argument('--gtf',
                         required=True,
                         help='The path to the ESPRESSO output updated.gtf')
