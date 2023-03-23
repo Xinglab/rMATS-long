@@ -79,7 +79,7 @@ combine_plots <- function(prop_plot, cpm_plot, font_size) {
 save_plot <- function(num_samples, combined_plot, out_plot_path) {
     out_width <- base::max(0.25*num_samples + 1, 8)
     ggplot2::ggsave(out_plot_path, plot=combined_plot, width=out_width,
-                    height=5.8, dpi=300)
+                    height=5.8, dpi=300, bg='white')
 }
 
 create_ggplot_theme <- function(font_size) {
@@ -147,8 +147,19 @@ rename_transcripts_and_define_factors <- function(data, max_transcripts,
     sorted_transcripts <- base::unique(data$transcript)
     num_transcripts <- base::length(sorted_transcripts)
     ## Combine additional transcripts into a single bar labeled 'Others"
-    named_transcripts <- sorted_transcripts[1:max_transcripts]
-    other_transcripts <- sorted_transcripts[(max_transcripts + 1):num_transcripts]
+    named_transcripts <- base::vector(mode='character')
+    other_transcripts <- base::vector(mode='character')
+    for (transcript_i in 1:num_transcripts) {
+        if (transcript_i > max_transcripts) {
+            other_transcripts <- base::append(other_transcripts,
+                                              sorted_transcripts[transcript_i])
+        } else {
+            named_transcripts <- base::append(named_transcripts,
+                                              sorted_transcripts[transcript_i])
+        }
+    }
+    any_others <- base::length(other_transcripts) > 0
+
     data$transcript <- base::lapply(data$transcript, function(transcript) {
         if (transcript %in% other_transcripts) {
             return('Others')
@@ -156,15 +167,17 @@ rename_transcripts_and_define_factors <- function(data, max_transcripts,
         return(transcript)
     })
     new_df <- data[data$transcript != 'Others', ]
-    for (sample in unique_samples) {
-        sample_indices <- base::which(data$sample == sample &
-                                      data$transcript == 'Others')
-        cpm_sum <- base::sum(data$cpm[sample_indices])
-        prop_sum <- base::sum(data$proportion[sample_indices])
-        first_sample_row <- data[sample_indices[1], ]
-        first_sample_row$cpm <- cpm_sum
-        first_sample_row$proportion <- prop_sum
-        new_df <- base::rbind(new_df, first_sample_row)
+    if (any_others) {
+        for (sample in unique_samples) {
+            sample_indices <- base::which(data$sample == sample &
+                                          data$transcript == 'Others')
+            cpm_sum <- base::sum(data$cpm[sample_indices])
+            prop_sum <- base::sum(data$proportion[sample_indices])
+            first_sample_row <- data[sample_indices[1], ]
+            first_sample_row$cpm <- cpm_sum
+            first_sample_row$proportion <- prop_sum
+            new_df <- base::rbind(new_df, first_sample_row)
+        }
     }
 
     ## Define sorting for the plot with factors

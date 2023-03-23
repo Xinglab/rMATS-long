@@ -5,6 +5,13 @@ import os.path
 import subprocess
 import sys
 
+import matplotlib
+# Select a non-interctive backend immediately after import
+matplotlib.use('Agg')
+
+import matplotlib.pyplot as plt
+import numpy as np
+
 
 def transcript_colors():
     return [
@@ -34,6 +41,10 @@ def parse_args():
     parser.add_argument('--gene-id',
                         required=True,
                         help='The gene_id to visualize')
+    parser.add_argument('--gene-name',
+                        required=False,
+                        help=('The name for the gene (used as plot title).'
+                              ' --gene-id is used as a default'))
     parser.add_argument(
         '--abundance',
         required=True,
@@ -95,6 +106,9 @@ def parse_args():
 
         args.group_1 = parse_group_file(args.group_1)
         args.group_2 = parse_group_file(args.group_2)
+
+    if args.gene_name is None:
+        args.gene_name = args.gene_id
 
     return args
 
@@ -319,9 +333,285 @@ def plot_abundance(out_path, cpm_and_proportion_path, max_transcripts):
     run_command(command)
 
 
-def plot_structure(out_path, proportion_path, gtf_path, gene_id,
+# The proportion file has the transcripts in sorted order.
+def read_transcript_ids(proportion_path):
+    transcript_ids = list()
+    with open(proportion_path, 'rt') as handle:
+        for line_i, line in enumerate(handle):
+            columns = line.rstrip('\n').split('\t')
+            if line_i == 0:
+                headers = columns
+                continue
+
+            row = dict(zip(headers, columns))
+            transcript = row['transcript']
+            if transcript in transcript_ids:
+                continue
+
+            transcript_ids.append(transcript)
+
+    return transcript_ids
+
+
+def read_transcript_details(gtf_path, transcript_ids):
+    details_by_transcript = dict()
+    with open(gtf_path, 'rt') as handle:
+        for line in handle:
+            if line.startswith('#'):
+                # skip comment lines
+                continue
+
+            parsed = parse_gtf_line(line)
+            transcript_id = parsed['attributes'].get('transcript_id')
+            if transcript_id not in transcript_ids:
+                continue
+
+            details = details_by_transcript.get(transcript_id)
+            if not details:
+                details = dict()
+                details_by_transcript[transcript_id] = details
+
+            strand = parsed['strand']
+            if strand != '.':
+                details['strand'] = strand
+
+            if parsed['feature'] != 'exon':
+                continue
+
+            exons = details.get('exons')
+            if not exons:
+                exons = list()
+                details['exons'] = exons
+
+            exons.append((parsed['start'], parsed['end']))
+
+    found_transcripts = set(details_by_transcript)
+    expected_transcripts = set(transcript_ids)
+    if found_transcripts != expected_transcripts:
+        raise Exception(
+            'Did not find all expected transcripts: {}.'
+            ' Missing: {}'.format(
+                expected_transcripts,
+                expected_transcripts.difference(found_transcripts)))
+
+    return details_by_transcript
+
+
+def parse_gtf_line(line):
+    columns = line.rstrip('\n').split('\t')
+    chr_name = columns[0]
+    source = columns[1]
+    feature = columns[2]
+    start_str = columns[3]
+    start = int(start_str)
+    end_str = columns[4]
+    end = int(end_str)
+    score = columns[5]
+    strand = columns[6]
+    frame = columns[7]
+    attributes_str = columns[8]
+    attributes = parse_gtf_attributes(attributes_str)
+    return {
+        'chr': chr_name,
+        'source': source,
+        'feature': feature,
+        'start': start,
+        'end': end,
+        'score': score,
+        'strand': strand,
+        'frame': frame,
+        'attributes': attributes,
+        'line': line
+    }
+
+
+def parse_gtf_attributes(attributes_str):
+    attributes = dict()
+    attribute_pairs = attributes_str.split(';')
+    for attribute_pair in attribute_pairs:
+        attribute_pair = attribute_pair.strip()
+        first_space = attribute_pair.find(' ')
+        if first_space <= 0:
+            continue
+
+        key = attribute_pair[:first_space]
+        value = attribute_pair[first_space + 1:]
+        if value[0] == '"' and value[-1] == '"':
+            # remove quotes
+            value = value[1:-1]
+
+        attributes[key] = value
+
+    return attributes
+
+
+def get_exon_length(exon):
+    return (exon[1] - exon[0]) + 1
+
+
+def get_intron_length(exon_1, exon_2):
+    return (exon_2[0] - exon_1[1]) - 1
+
+
+def get_min_and_max_coords(transcript_details):
+    min_coord = None
+    max_coord = None
+    for details in transcript_details.values():
+        exons = details['exons']
+        exons.sort()
+        transcript_min_coord = exons[0][0]
+        transcript_max_coord = exons[-1][1]
+        if min_coord is None:
+            min_coord = transcript_min_coord
+        else:
+            min_coord = min(min_coord, transcript_min_coord)
+
+        if max_coord is None:
+            max_coord = transcript_max_coord
+        else:
+            max_coord = max(max_coord, transcript_max_coord)
+
+    return min_coord, max_coord
+
+
+def get_plot_coords_by_transcript(transcript_details, min_coord,
+                                  region_length):
+    plot_coords_by_transcript = dict()
+    for transcript, details in transcript_details.items():
+        plot_coords = list()
+        is_minus_strand = details['strand'] == '-'
+        exons = details['exons']
+        transcript_min_coord = exons[0][0]
+        start_pos = transcript_min_coord - min_coord
+        current_pos = start_pos
+        for exon_i in range(len(exons) - 1):
+            exon_length = get_exon_length(exons[exon_i])
+            intron_length = get_intron_length(exons[exon_i], exons[exon_i + 1])
+            exon_start = current_pos
+            intron_start = current_pos + exon_length
+            exon_end = intron_start - 1
+            intron_end = exon_end + intron_length
+            plot_coords.append((exon_start, exon_end))
+            plot_coords.append((intron_start, intron_end))
+            current_pos = intron_end + 1
+
+        # last_exon
+        exon_start = current_pos
+        exon_length = get_exon_length(exons[-1])
+        exon_end = exon_start + (exon_length - 1)
+        plot_coords.append((exon_start, exon_end))
+        # Flip the coordinates by subtracting from the region_length.
+        # This puts the 5' end on the left.
+        if is_minus_strand:
+            adjusted_plot_coords = list()
+            for start, end in reversed(plot_coords):
+                adjusted_start = (region_length - 1) - start
+                adjusted_end = (region_length - 1) - end
+                adjusted_plot_coords.append((adjusted_end, adjusted_start))
+
+            plot_coords = adjusted_plot_coords
+
+        plot_coords_by_transcript[transcript] = plot_coords
+
+    return plot_coords_by_transcript
+
+
+def plot_transcripts(ax, transcripts_to_plot, plot_coords_by_transcript,
+                     region_length, line_space, exon_height, colors,
+                     exon_edge_color, exon_line_width, intron_line_color,
+                     intron_line_width, font_size):
+    exon_z_order = 100
+    five_prime_x_val = -0.03 * region_length
+    colors_to_plot = colors[:len(transcripts_to_plot)]
+    reversed_transcripts = list(reversed(transcripts_to_plot))
+    reversed_colors = list(reversed(colors_to_plot))
+    for transcript_i, transcript_id in enumerate(reversed_transcripts):
+        color = reversed_colors[transcript_i]
+        plot_coords = plot_coords_by_transcript[transcript_id]
+        mid_y_val = line_space * (transcript_i + 1)
+        top_y_val = mid_y_val + (exon_height / 2)
+        bottom_y_val = mid_y_val - (exon_height / 2)
+        text_y_val = mid_y_val - (0.1 * line_space) + exon_height
+        five_prime_y_val = mid_y_val - 2
+        is_exon = True
+        for region in plot_coords:
+            start, end = region
+            if is_exon:
+                is_exon = False
+
+                exon_x = np.array([start, end])
+                exon_y_top = np.array([top_y_val] * 2)
+                exon_y_bottom = np.array([bottom_y_val] * 2)
+                ax.fill_between(exon_x,
+                                exon_y_top,
+                                exon_y_bottom,
+                                facecolor=color,
+                                edgecolor=exon_edge_color,
+                                linewidth=exon_line_width,
+                                zorder=exon_z_order)
+            else:
+                is_exon = True
+                intron_x = np.array([start, end])
+                intron_y = np.array([mid_y_val] * 2)
+                plt.plot(intron_x,
+                         intron_y,
+                         color=intron_line_color,
+                         linewidth=intron_line_width)
+
+        plt.text(0, text_y_val, transcript_id, fontsize=font_size)
+        plt.text(five_prime_x_val,
+                 five_prime_y_val,
+                 "5'",
+                 fontsize=font_size + 1)
+
+
+def plot_structure(out_path, proportion_path, gtf_path, gene_name,
                    main_transcript_id, max_transcripts):
-    pass  # TODO
+    colors = transcript_colors()
+    transcript_ids = read_transcript_ids(proportion_path)
+    transcript_details = read_transcript_details(gtf_path, transcript_ids)
+    transcripts_to_plot = transcript_ids[:max_transcripts]
+    num_transcripts = len(transcripts_to_plot)
+    if main_transcript_id not in transcripts_to_plot:
+        raise Exception('Did not find data for main transcript {}'.format(
+            main_transcript_id))
+
+    fig = plt.figure(figsize=(12, 4), dpi=300)
+    ax = fig.add_subplot(111)
+    exon_height = 6
+    line_space = 13
+    intron_line_width = 0.5
+    intron_line_color = 'black'
+    exon_line_width = 0.5
+    exon_edge_color = 'black'
+    font_size = 13
+    min_coord, max_coord = get_min_and_max_coords(transcript_details)
+    region_length = (max_coord - min_coord) + 1
+    plot_coords_by_transcript = get_plot_coords_by_transcript(
+        transcript_details, min_coord, region_length)
+    plot_transcripts(ax, transcripts_to_plot, plot_coords_by_transcript,
+                     region_length, line_space, exon_height, colors,
+                     exon_edge_color, exon_line_width, intron_line_color,
+                     intron_line_width, font_size)
+
+    low_x_lim = -0.1 * region_length
+    high_x_lim = 1.1 * region_length
+    low_y_lim = 0
+    high_y_lim = line_space * (num_transcripts + 1.5)
+    mid_x_lim = (high_x_lim + low_x_lim) / 2
+    title_x_val = mid_x_lim
+    title_y_val = line_space * (num_transcripts + 1)
+    plt.text(title_x_val,
+             title_y_val,
+             gene_name,
+             fontsize=font_size + 1,
+             horizontalalignment='center')
+    ax.set_xlim(low_x_lim, high_x_lim)
+    ax.set_ylim(low_y_lim, high_y_lim)
+    plt.axis('off')
+    # Let the plot take up the whole figure.
+    plt.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0, hspace=0)
+    plt.savefig(out_path, dpi=300, pad_inches=0)
 
 
 def visualize_isoforms(args):
@@ -342,7 +632,7 @@ def visualize_isoforms(args):
     plot_abundance(abundance_plot_file, cpm_and_proportion_file,
                    args.max_transcripts)
     plot_structure(structure_plot_file, cpm_and_proportion_file,
-                   args.updated_gtf, args.gene_id, args.main_transcript_id,
+                   args.updated_gtf, args.gene_name, args.main_transcript_id,
                    args.max_transcripts)
 
 
