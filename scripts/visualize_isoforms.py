@@ -71,11 +71,13 @@ def parse_args():
         help='How many transcripts to plot individually.'
         ' The remaining transcripts in the gene will be grouped together'
         ' (max {}, default %(default)s)'.format(MAX_TRANSCRIPTS))
-    # TODO intron scaling: find regions that only have introns -> scale them as 1/intron_scaling
-    # is_exon = np.array(size)
-    # for transcript -> for exon -> is_exon[coord] = True
-    # coord_translation = np.array(size)
-    # new_i = 0; for i, is_exon in is_exon: -> (only advance new_i at most 1 for every intron_scaling if not is_exon
+    parser.add_argument(
+        '--intron-scaling',
+        type=int,
+        default=1,
+        help=('The factor to use to reduce intron length in the plot.'
+              ' A value of 2 would reduce introns to 1/2 of the'
+              ' original plot length (default %(default)s)'))
     parser.add_argument(
         '--group-1',
         help=('The path to a file listing the sample names for group 1. The'
@@ -565,8 +567,82 @@ def plot_transcripts(ax, transcripts_to_plot, plot_coords_by_transcript,
                  fontsize=font_size + 1)
 
 
+def get_exon_regions(plot_coords_by_transcript, region_length):
+    coord_is_exon = np.full(region_length, False)
+    for plot_coords in plot_coords_by_transcript.values():
+        is_exon = True
+        for region in plot_coords:
+            if not is_exon:
+                is_exon = True
+                continue
+
+            start, end = region
+            coord_is_exon[start:end + 1] = True
+            is_exon = False
+
+    return coord_is_exon
+
+
+def get_intron_coord_translation(coord_is_exon, region_length, intron_scaling):
+    num_removed_units = 0
+    coord_translation = np.full(region_length, 0)
+    new_coord = 0
+    in_intron = False
+    current_scaling_skip_count = 0
+    max_to_skip = intron_scaling - 1
+    for i, is_exon in enumerate(coord_is_exon):
+        coord_translation[i] = new_coord
+        # Leave exon regions alone
+        if is_exon:
+            in_intron = False
+            new_coord += 1
+            continue
+
+        # Keep the first coord of an intron region
+        if not in_intron:
+            in_intron = True
+            current_scaling_skip_count = 0
+            new_coord += 1
+            continue
+
+        # Skip max_to_skip before using more space for an intron region
+        if current_scaling_skip_count == max_to_skip:
+            current_scaling_skip_count = 0
+            new_coord += 1
+            continue
+
+        # skip
+        current_scaling_skip_count += 1
+        num_removed_units += 1
+
+    return coord_translation, num_removed_units
+
+
+def translate_coords(plot_coords_by_transcript, coord_translation):
+    for plot_coords in plot_coords_by_transcript.values():
+        for i, region in enumerate(plot_coords):
+            start, end = region
+            new_start = coord_translation[start]
+            new_end = coord_translation[end]
+            plot_coords[i] = (new_start, new_end)
+
+
+# Regions that only have introns will be scaled to 1/intron_scaling
+def apply_intron_scaling(plot_coords_by_transcript, intron_scaling,
+                         region_length):
+    if intron_scaling == 1:
+        return region_length
+
+    coord_is_exon = get_exon_regions(plot_coords_by_transcript, region_length)
+    coord_translation, num_removed_units = get_intron_coord_translation(
+        coord_is_exon, region_length, intron_scaling)
+    translate_coords(plot_coords_by_transcript, coord_translation)
+
+    return region_length - num_removed_units
+
+
 def plot_structure(out_path, proportion_path, gtf_path, gene_name,
-                   main_transcript_id, max_transcripts):
+                   main_transcript_id, max_transcripts, intron_scaling):
     colors = transcript_colors()
     transcript_ids = read_transcript_ids(proportion_path)
     transcript_details = read_transcript_details(gtf_path, transcript_ids)
@@ -589,6 +665,8 @@ def plot_structure(out_path, proportion_path, gtf_path, gene_name,
     region_length = (max_coord - min_coord) + 1
     plot_coords_by_transcript = get_plot_coords_by_transcript(
         transcript_details, min_coord, region_length)
+    region_length = apply_intron_scaling(plot_coords_by_transcript,
+                                         intron_scaling, region_length)
     plot_transcripts(ax, transcripts_to_plot, plot_coords_by_transcript,
                      region_length, line_space, exon_height, colors,
                      exon_edge_color, exon_line_width, intron_line_color,
@@ -633,7 +711,7 @@ def visualize_isoforms(args):
                    args.max_transcripts)
     plot_structure(structure_plot_file, cpm_and_proportion_file,
                    args.updated_gtf, args.gene_name, args.main_transcript_id,
-                   args.max_transcripts)
+                   args.max_transcripts, args.intron_scaling)
 
 
 def create_output_dir(dir_path):
