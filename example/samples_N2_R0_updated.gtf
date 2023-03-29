@@ -1,4 +1,4 @@
-# ESPRESSO version: 1.3.1, source code commit: ea570a5ab6a87d88038fd98283ece88c63c20afb
+# ESPRESSO version: 1.3.1, source code commit: 6629e09951355eef8fe8c27f31fd0467775aa798
 chr11	annotated_isoform	transcript	57528626	57530803	.	-	.	transcript_id "ENST00000525587.1"; gene_id "ENSG00000134809.9";
 chr11	annotated_isoform	exon	57528626	57528918	.	-	.	transcript_id "ENST00000525587.1"; gene_id "ENSG00000134809.9"; exon_number "1";
 chr11	annotated_isoform	exon	57530119	57530234	.	-	.	transcript_id "ENST00000525587.1"; gene_id "ENSG00000134809.9"; exon_number "2";
