@@ -251,7 +251,6 @@ The first step is to run [ESPRESSO](https://github.com/Xinglab/espresso) using t
 Next, detect differential isoform usage. The sample names from the abundance file are split into the provided `group_1.txt`:
 ```
 pc3e_1,pc3e_2,pc3e_3
-
 ```
 
 and `group_2.txt`:
@@ -283,9 +282,9 @@ That will produce `example_out/ENSG00000198561.16_abundance.png` and `example_ou
 The plots show that ENST00000358694.10 is abundant in GS689 samples and ENST00000529986.5 is abundant in PC3E samples. There are also changes in abundance for other isoforms
 
 The differences among transcripts within that gene can be determined with [scripts/classify_isoform_differences.py](scripts/classify_isoform_differences.py)
-<!-- TODO release new ESPRESSO first so that the updated.gtf has the gene_id attribute -->
+
 ```
-python ./scripts/classify_isoform_differences.py --main-transcript-id ENST00000358694.10 --gtf ./example/gencode.v43.annotation_filtered.gtf --out-tsv ./example_out/isoform_differences.tsv
+python ./scripts/classify_isoform_differences.py --main-transcript-id ENST00000358694.10 --gtf ./example/samples_N2_R0_updated.gtf --out-tsv ./example_out/isoform_differences.tsv
 ```
 
 `./example_out/isoform_differences.tsv` shows that the difference between ENST00000358694.10 and ENST00000529986.5 is a single complex event: `ENST00000358694.10	ENST00000529986.5	COMPLEX	NA`. From `example_out/ENSG00000198561.16_structure.png` that complex event is the skipping of two consecutive exons
