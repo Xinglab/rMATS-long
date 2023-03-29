@@ -1,12 +1,8 @@
 /GRCh38.primary_assembly.genome_filtered.fa
 /gencode.v43.annotation_filtered.gtf
-/group_1.txt
-/group_2.txt
 /gs689_1_filtered.sam
 /gs689_2_filtered.sam
 /gs689_3_filtered.sam
 /pc3e_1_filtered.sam
 /pc3e_2_filtered.sam
 /pc3e_3_filtered.sam
-/samples_N2_R0_abundance.esp
-/samples_N2_R0_updated.gtf
