@@ -32,10 +32,61 @@ Those versions were used during testing. Other versions may also be compatible
 
 ## Usage
 
-First run [ESPRESSO](https://github.com/Xinglab/espresso) to detect and quantify isoforms using long-read data. The ESPRESSO output can be used to:
+First run [ESPRESSO](https://github.com/Xinglab/espresso) to detect and quantify isoforms using long-read data. The ESPRESSO output can be used with [scripts/rmats_long.py](scripts/rmats_long.py) which runs the following steps:
 * [Detect differential isoform usage](#detect-differential-isoforms): [scripts/detect_differential_isoforms.py](scripts/detect_differential_isoforms.py)
 * [Visualize isoforms and abundance](#visualize-isoforms-and-abundance): [scripts/visualize_isoforms.py](scripts/visualize_isoforms.py)
 * [Classify isoform differences](#classify-isoform-differences): [scripts/classify_isoform_differences.py](scripts/classify_isoform_differences.py)
+
+The individual scripts used by [scripts/rmats_long.py](scripts/rmats_long.py) can also be run directly if desired
+
+```
+python rmats_long.py -h
+
+usage: rmats_long.py [-h] --abundance ABUNDANCE --updated-gtf UPDATED_GTF
+                     [--gencode-gtf GENCODE_GTF] --group-1 GROUP_1 --group-2
+                     GROUP_2 [--group-1-name GROUP_1_NAME]
+                     [--group-2-name GROUP_2_NAME] --out-dir OUT_DIR
+                     [--num-threads NUM_THREADS] [--plot-top-n PLOT_TOP_N]
+                     [--diff-transcripts DIFF_TRANSCRIPTS]
+                     [--adj-pvalue ADJ_PVALUE]
+                     [--delta-proportion DELTA_PROPORTION]
+
+Analyze ESPRESSO results and produce plots for significant isoforms
+
+options:
+  -h, --help            show this help message and exit
+  --abundance ABUNDANCE
+                        The path to the abundance.esp file from ESPRESSO
+  --updated-gtf UPDATED_GTF
+                        The path to the updated.gtf file from ESPRESSO
+  --gencode-gtf GENCODE_GTF
+                        The path to a gencode annotation.gtf file. Will be
+                        used to identify the Ensemble canonical isoform
+  --group-1 GROUP_1     The path to a file listing the sample names for group
+                        1. The file should have a single line with the sample
+                        names as a comma separated list. The sample names
+                        should match with the ESPRESSO abundance column names.
+  --group-2 GROUP_2     The path to a file listing the sample names for group
+                        2
+  --group-1-name GROUP_1_NAME
+                        A name for group 1 (default group 1)
+  --group-2-name GROUP_2_NAME
+                        A name for group 2 (default group 2)
+  --out-dir OUT_DIR     The path to use as the output directory
+  --num-threads NUM_THREADS
+                        The number of threads to use (default 1)
+  --plot-top-n PLOT_TOP_N
+                        Generate plots for the top "n" significant genes. To
+                        plot all significant genes use --plot-top-n -1.
+                        (default 10)
+  --diff-transcripts DIFF_TRANSCRIPTS
+                        The path to the differential transcript results. If
+                        given then skip the differential isoform calculation.
+  --adj-pvalue ADJ_PVALUE
+                        The cutoff for adjusted p-value (default 0.05)
+  --delta-proportion DELTA_PROPORTION
+                        The cutoff for delta isoform proportion (default 0.1)
+```
 
 ### Detect Differential Isoforms
 
@@ -76,8 +127,8 @@ Detect differential isoform expression using DRIMSeq
 options:
   -h, --help            show this help message and exit
   --abundance ABUNDANCE
-                        The path to abundance.esp file from ESPRESSO
-  --out-dir OUT_DIR     The path to use as output directory
+                        The path to the abundance.esp file from ESPRESSO
+  --out-dir OUT_DIR     The path to use as the output directory
   --group-1 GROUP_1     The path to a file listing the sample names for group
                         1. The file should have a single line with the sample
                         names as a comma separated list. The sample names
@@ -92,15 +143,18 @@ options:
 python count_significant_isoforms.py -h
 
 usage: count_significant_isoforms.py [-h] --diff-transcripts DIFF_TRANSCRIPTS
+                                     --out-tsv OUT_TSV
                                      [--adj-pvalue ADJ_PVALUE]
                                      [--delta-proportion DELTA_PROPORTION]
 
-Count isoforms that meet cutoffs
+Count isoforms that meet the cutoff values
 
 options:
   -h, --help            show this help message and exit
   --diff-transcripts DIFF_TRANSCRIPTS
                         The path to the differential transcript results
+  --out-tsv OUT_TSV     The path to write transcripts that meet the cutoff
+                        values
   --adj-pvalue ADJ_PVALUE
                         The cutoff for adjusted p-value (default: 0.05)
   --delta-proportion DELTA_PROPORTION
@@ -111,6 +165,7 @@ options:
 
 [scripts/visualize_isoforms.py](scripts/visualize_isoforms.py) creates plots showing the isoform abundance and structure. The `--gene-id` and `--main-transcript-id` can be selected from the [differential isoform test](#detect-differential-isoforms). The `--abundance` and `--updated-gtf` files are from the ESPRESSO output
 
+<!-- TODO add --gencode-gtf and --main-transcript-ids  -->
 ```
 python visualize_isoforms.py -h
 
@@ -188,6 +243,7 @@ The output is a tab-delimited file consisting of four fields:
 
 **Note:** Designation of transcript isoforms 1 and 2 is completely arbitrary. Moreover, if the two transcript isoforms contained in the input GTF file exhibit a combination of multiple alternative splicing events, each event will be reported as its own line in the output file.
 
+<!-- TODO add --extra-gtf -->
 ```
 python classify_isoform_differences.py -h
 
@@ -223,6 +279,8 @@ options:
 ```
 
 ### Example
+
+<!-- TODO update example to use rmats_long.py and also updated individual commands -->
 
 Example data is provided in [example/data.tar.gz](example/data.tar.gz). Unpack that file with:
 ```

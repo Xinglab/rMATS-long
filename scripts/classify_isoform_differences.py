@@ -1,9 +1,9 @@
 import argparse
 import os
 import os.path
-import subprocess
-import sys
 import tempfile
+
+import rmats_long_utils
 
 
 def parse_args():
@@ -13,9 +13,13 @@ def parse_args():
         '--main-transcript-id',
         required=True,
         help='The transcript_id of the main isoform in the .gtf file')
-    parser.add_argument('--gtf',
+    parser.add_argument('--updated-gtf',
                         required=True,
-                        help='The path to a .gtf describing the isoforms')
+                        help='The path to the updated.gtf file from ESPRESSO')
+    parser.add_argument(
+        '--gencode-gtf',
+        help=('The path to a gencode annotation.gtf file. Can be used to'
+              ' compare against isoforms not detected by ESPRESSO'))
     parser.add_argument('--out-tsv',
                         required=True,
                         help='The path of the output file')
@@ -47,103 +51,61 @@ def classify_isoform_differences(args):
         temp_files = get_temp_files(args.out_tsv)
         classify_isoform_differences_with_temp_files(temp_files,
                                                      args.main_transcript_id,
-                                                     args.gtf, args.out_tsv)
+                                                     args.updated_gtf,
+                                                     args.gencode_gtf,
+                                                     args.out_tsv)
     finally:
         for temp_file in temp_files.values():
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
 
-def get_python_executable():
-    python_executable = sys.executable
-    if not python_executable:
-        python_executable = 'python'
-
-    return python_executable
-
-
 def get_alt_script_path():
-    py_script_rel_path = sys.argv[0]
-    py_script_abs_path = os.path.abspath(py_script_rel_path)
-    script_dir = os.path.dirname(py_script_abs_path)
+    script_dir = rmats_long_utils.get_script_dir()
     alt_script_path = os.path.join(script_dir, 'FindAltTSEvents.py')
     return alt_script_path
 
 
-def parse_gtf_line(line):
-    line = line.strip()
-    if line.startswith('#'):
-        # skip comment lines
-        return None
-
-    columns = line.split('\t')
-    chr_name = columns[0]
-    source = columns[1]
-    feature = columns[2]
-    start_str = columns[3]
-    start = int(start_str)
-    end_str = columns[4]
-    end = int(end_str)
-    score = columns[5]
-    strand = columns[6]
-    frame = columns[7]
-    attributes_str = columns[8]
-    attributes = parse_gtf_attributes(attributes_str)
-    return {
-        'chr': chr_name,
-        'source': source,
-        'feature': feature,
-        'start': start,
-        'end': end,
-        'score': score,
-        'strand': strand,
-        'frame': frame,
-        'attributes': attributes,
-        'line': line
-    }
-
-
-def parse_gtf_attributes(attributes_str):
-    attributes = dict()
-    attribute_pairs = attributes_str.split(';')
-    for attribute_pair in attribute_pairs:
-        attribute_pair = attribute_pair.strip()
-        first_space = attribute_pair.find(' ')
-        if first_space <= 0:
-            continue
-
-        key = attribute_pair[:first_space]
-        value = attribute_pair[first_space + 1:]
-        if value[0] == '"' and value[-1] == '"':
-            # remove quotes
-            value = value[1:-1]
-
-        attributes[key] = value
-
-    return attributes
-
-
-def filter_gtf_to_gene(gtf, main_transcript_id):
-    gene_id = None
-    with open(gtf, 'rt') as gtf_handle:
-        for line in gtf_handle:
-            parsed = parse_gtf_line(line)
-            if not parsed:
-                continue
-
-            transcript_id = parsed['attributes'].get('transcript_id')
-            if transcript_id == main_transcript_id:
-                gene_id = parsed['attributes'].get('gene_id')
-                break
+def filter_gtf_to_gene(updated_gtf, gencode_gtf, main_transcript_id):
+    gene_id = find_gene_id_from_gtf(main_transcript_id, updated_gtf)
+    if gene_id is None:
+        gene_id = find_gene_id_from_gtf(main_transcript_id, gencode_gtf)
 
     if gene_id is None:
         raise Exception(
             'Unable to find gene_id for {}'.format(main_transcript_id))
 
-    lines_by_transcript = dict()
-    with open(gtf, 'rt') as gtf_handle:
+    lines_by_transcript = get_gtf_lines_by_transcript(updated_gtf, gene_id)
+    if gencode_gtf:
+        gencode_lines_by_transcript = get_gtf_lines_by_transcript(
+            gencode_gtf, gene_id)
+        for transcript, lines in gencode_lines_by_transcript.items():
+            if transcript not in lines_by_transcript:
+                lines_by_transcript[transcript] = lines
+
+    return lines_by_transcript
+
+
+def find_gene_id_from_gtf(transcript_id, gtf_path):
+    with open(gtf_path, 'rt') as gtf_handle:
         for line in gtf_handle:
-            parsed = parse_gtf_line(line)
+            parsed = rmats_long_utils.parse_gtf_line(line)
+            if not parsed:
+                continue
+
+            found_transcript_id = parsed['attributes'].get('transcript_id')
+            if found_transcript_id == transcript_id:
+                gene_id = parsed['attributes'].get('gene_id')
+                return gene_id
+
+    return None
+
+
+def get_gtf_lines_by_transcript(gtf_path, gene_id):
+    lines_by_transcript = dict()
+    with open(gtf_path, 'rt') as gtf_handle:
+        for line in gtf_handle:
+            parsed = rmats_long_utils.parse_gtf_line(line)
             if not parsed:
                 continue
 
@@ -166,31 +128,27 @@ def write_gtf_lines(file_name, main_lines, other_lines):
             handle.write('{}\n'.format(parsed['line']))
 
 
-def write_tsv_line(handle, columns):
-    handle.write('{}\n'.format('\t'.join(columns)))
-
-
 def classify_isoform_differences_with_temp_files(temp_files,
-                                                 main_transcript_id, gtf,
+                                                 main_transcript_id,
+                                                 updated_gtf, gencode_gtf,
                                                  out_tsv):
-    python = get_python_executable()
+    python = rmats_long_utils.get_python_executable()
     script = get_alt_script_path()
     isoform_gtf = temp_files['isoform_gtf']
     isoform_tsv = temp_files['isoform_tsv']
-    lines_by_transcript = filter_gtf_to_gene(gtf, main_transcript_id)
-
+    lines_by_transcript = filter_gtf_to_gene(updated_gtf, gencode_gtf,
+                                             main_transcript_id)
     main_transcript_lines = lines_by_transcript[main_transcript_id]
     headers = ['transcript1', 'transcript2', 'event', 'coordinates']
     with open(out_tsv, 'wt') as combined_handle:
-        write_tsv_line(combined_handle, headers)
+        rmats_long_utils.write_tsv_line(combined_handle, headers)
         for transcript, lines in lines_by_transcript.items():
             if transcript == main_transcript_id:
                 continue
 
             write_gtf_lines(isoform_gtf, main_transcript_lines, lines)
             command = [python, script, '-i', isoform_gtf, '-o', isoform_tsv]
-            print('running: {}'.format(command))
-            subprocess.run(command, check=True)
+            rmats_long_utils.run_command(command)
             with open(isoform_tsv, 'rt') as single_handle:
                 for line_i, line in enumerate(single_handle):
                     if line_i == 0:

@@ -1,19 +1,20 @@
 import argparse
 import os
 import os.path
-import subprocess
-import sys
+
+import rmats_long_utils
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=('Detect differential isoform expression using DRIMSeq'))
-    parser.add_argument('--abundance',
-                        required=True,
-                        help='The path to abundance.esp file from ESPRESSO')
+    parser.add_argument(
+        '--abundance',
+        required=True,
+        help='The path to the abundance.esp file from ESPRESSO')
     parser.add_argument('--out-dir',
                         required=True,
-                        help='The path to use as output directory')
+                        help='The path to use as the output directory')
     parser.add_argument(
         '--group-1',
         required=True,
@@ -29,7 +30,6 @@ def parse_args():
         '--num-threads',
         type=int,
         default=1,
-        required=False,
         help='The number of threads to use (default: %(default)s)')
 
     return parser.parse_args()
@@ -62,11 +62,6 @@ def sort_tsv_by_columns(tsv_path, column_names):
             handle.write(row)
 
 
-def run_command(command):
-    print('running: {}'.format(command))
-    subprocess.run(command, check=True)
-
-
 def detect_isoforms(script_dir, abundance_path, out_dir, num_threads,
                     group_1_path, group_2_path):
     r_script_path = os.path.join(script_dir, 'detect_differential_isoforms.R')
@@ -74,7 +69,7 @@ def detect_isoforms(script_dir, abundance_path, out_dir, num_threads,
         'Rscript', r_script_path, abundance_path, out_dir,
         str(num_threads), group_1_path, group_2_path
     ]
-    run_command(command)
+    rmats_long_utils.run_command(command)
 
 
 def sort_output(out_dir):
@@ -96,33 +91,25 @@ def calculate_isoform_proportion(script_dir, out_dir, abundance_path,
         diff_transcripts, '--abundance', abundance_path, '--group-1',
         group_1_path, '--group-2', group_2_path, '--tmp-file', tmp_file
     ]
-    run_command(command)
+    rmats_long_utils.run_command(command)
 
 
 def count_significant_isoforms(script_dir, out_dir, python_executable):
     count_script_path = os.path.join(script_dir,
                                      'count_significant_isoforms.py')
     diff_transcripts = os.path.join(out_dir, 'differential_transcripts.tsv')
+    filtered_transcripts = os.path.join(
+        out_dir, 'differential_transcripts_filtered.tsv')
     command = [
         python_executable, count_script_path, '--diff-transcripts',
-        diff_transcripts
+        diff_transcripts, '--out-tsv', filtered_transcripts
     ]
-    run_command(command)
-
-
-def get_python_executable():
-    python_executable = sys.executable
-    if not python_executable:
-        python_executable = 'python'
-
-    return python_executable
+    rmats_long_utils.run_command(command)
 
 
 def detect_differential_isoforms(args):
-    py_script_rel_path = sys.argv[0]
-    py_script_abs_path = os.path.abspath(py_script_rel_path)
-    script_dir = os.path.dirname(py_script_abs_path)
-    python_executable = get_python_executable()
+    script_dir = rmats_long_utils.get_script_dir()
+    python_executable = rmats_long_utils.get_python_executable()
 
     detect_isoforms(script_dir, args.abundance, args.out_dir, args.num_threads,
                     args.group_1, args.group_2)

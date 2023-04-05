@@ -1,6 +1,8 @@
 import argparse
 import shutil
 
+import rmats_long_utils
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -30,64 +32,23 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_group_file(file_path):
-    groups = None
-    with open(file_path, 'rt') as handle:
-        for line_i, line in enumerate(handle):
-            if line and line_i != 0:
-                print('expected only 1 line in {}'.format(file_path))
-
-            groups = line.rstrip('\n').split(',')
-
-    if not groups:
-        raise Exception('could not parse groups from: {}'.format(file_path))
-
-    return groups
-
-
 def parse_abundance(abundance_path):
-    details = dict()
-    total_by_gene_by_sample = dict()
+    parsed_details = rmats_long_utils.parse_abundance_file(abundance_path)
+    counts_by_gene_by_transcript_by_sample = (
+        parsed_details['counts_by_gene_by_transcript_by_sample'])
     counts_by_isoform_by_sample = dict()
-    details = {
-        'total_by_gene_by_sample': total_by_gene_by_sample,
+    for gene, counts_by_transcript_by_sample in (
+            counts_by_gene_by_transcript_by_sample.items()):
+        for transcript, counts_by_sample in (
+                counts_by_transcript_by_sample.items()):
+            new_counts_by_sample = dict()
+            counts_by_isoform_by_sample[transcript] = new_counts_by_sample
+            for sample, count in counts_by_sample.items():
+                new_counts_by_sample[sample] = count
+    return {
+        'total_by_gene_by_sample': parsed_details['total_by_gene_by_sample'],
         'counts_by_isoform_by_sample': counts_by_isoform_by_sample,
     }
-    with open(abundance_path, 'rt') as handle:
-        for line_i, line in enumerate(handle):
-            columns = line.rstrip('\n').split('\t')
-            if line_i == 0:
-                headers = columns
-                samples = headers[3:]
-                continue
-
-            row = dict(zip(headers, columns))
-            gene = row['gene_ID']
-            isoform = row['transcript_ID']
-            if gene == 'NA':
-                continue
-
-            total_by_sample = total_by_gene_by_sample.get(gene)
-            if not total_by_sample:
-                total_by_sample = dict()
-                total_by_gene_by_sample[gene] = total_by_sample
-
-            count_by_sample = counts_by_isoform_by_sample.get(isoform)
-            if not count_by_sample:
-                count_by_sample = dict()
-                counts_by_isoform_by_sample[isoform] = count_by_sample
-
-            for sample in samples:
-                count = float(row[sample])
-                count_by_sample[sample] = count
-                old_total = total_by_sample.get(sample, 0)
-                total_by_sample[sample] = old_total + count
-
-    return details
-
-
-def write_tsv_line(handle, columns):
-    handle.write('{}\n'.format('\t'.join(columns)))
 
 
 def calc_group_proportions(samples, total_by_sample, counts_by_sample):
@@ -138,7 +99,7 @@ def append_proportion_columns(diff_transcripts_path, abundance_details,
                     new_headers.append('group_1_average_proportion')
                     new_headers.append('group_2_average_proportion')
                     new_headers.append('delta_isoform_proportion')
-                    write_tsv_line(out_handle, new_headers)
+                    rmats_long_utils.write_tsv_line(out_handle, new_headers)
                     continue
 
                 row = dict(zip(orig_headers, columns))
@@ -163,15 +124,15 @@ def append_proportion_columns(diff_transcripts_path, abundance_details,
                     else:
                         columns.append(str(round(value, 4)))
 
-                write_tsv_line(out_handle, columns)
+                rmats_long_utils.write_tsv_line(out_handle, columns)
 
     shutil.move(tmp_path, diff_transcripts_path)
 
 
 def calculate_isoform_proportion(diff_transcripts_path, abundance_path,
                                  group_1_path, group_2_path, tmp_path):
-    group_1_samples = parse_group_file(group_1_path)
-    group_2_samples = parse_group_file(group_2_path)
+    group_1_samples = rmats_long_utils.parse_group_file(group_1_path)
+    group_2_samples = rmats_long_utils.parse_group_file(group_2_path)
     abundance_details = parse_abundance(abundance_path)
     append_proportion_columns(diff_transcripts_path, abundance_details,
                               group_1_samples, group_2_samples, tmp_path)

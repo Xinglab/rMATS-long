@@ -172,6 +172,7 @@ main <- function() {
     design_full <- stats::model.matrix(~ group,
                                        data=DRIMSeq::samples(drim_data))
     null_model <- stats::model.matrix(~ 1, data=DRIMSeq::samples(drim_data))
+    base::cat('\nAbout to run DRIMSeq::dmPrecision(...) which could take a while...\n')
     drim_data <- DRIMSeq::dmPrecision(drim_data, design=design_full,
                                       BPPARAM=bpparam)
     plot_precision(drim_data, out_dir_path)
