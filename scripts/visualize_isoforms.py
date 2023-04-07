@@ -123,6 +123,9 @@ def parse_args():
         args.group_1 = rmats_long_utils.parse_group_file(args.group_1)
         args.group_2 = rmats_long_utils.parse_group_file(args.group_2)
 
+    if args.main_transcript_ids:
+        args.main_transcript_ids = args.main_transcript_ids.split(',')
+
     return args
 
 
@@ -131,7 +134,6 @@ def calculate_transcript_rows(counts_by_transcript_by_sample,
                               group_2, group_1_name, group_2_name):
     rows_by_transcript = dict()
     for transcript, counts_by_sample in counts_by_transcript_by_sample.items():
-        counts_by_sample = counts_by_transcript_by_sample[transcript]
         for sample_i, sample in enumerate(group_1 + group_2):
             is_group_1 = sample_i < len(group_1)
             gene_total = gene_total_by_sample[sample]
@@ -216,6 +218,11 @@ def calc_proportion_and_cpm(abundance_path, gene_id, main_transcript_ids,
         group_1 = sample_names
         group_2 = list()
 
+    if sample_names[0] in group_1:
+        group_name_of_first_sample = group_1_name
+    else:
+        group_name_of_first_sample = group_2_name
+
     counts_by_transcript_by_sample = (
         counts_by_gene_by_transcript_by_sample[gene_id])
     gene_total_by_sample = total_by_gene_by_sample[gene_id]
@@ -232,12 +239,11 @@ def calc_proportion_and_cpm(abundance_path, gene_id, main_transcript_ids,
         for transcript in sorted_transcripts:
             transcript_rows = rows_by_transcript.get(transcript)
             if not transcript_rows:
-                # The main_transcript_ids can be specified manually and
-                # might not have any read counts.
+                # The main_transcript_ids might not have any read counts.
                 # Add a line to the output with 0 values.
                 out_columns = [
-                    gene_id, transcript, sample_names[0], group_1_name, '0',
-                    '0'
+                    gene_id, transcript, sample_names[0],
+                    group_name_of_first_sample, '0', '0'
                 ]
                 rmats_long_utils.write_tsv_line(out_handle, out_columns)
                 continue
@@ -590,18 +596,17 @@ def determine_main_transcripts_and_gene_name(gene_id, orig_gene_name,
                                              orig_main_transcript_ids,
                                              gencode_gtf_path,
                                              diff_transcripts_path):
-    found_gene_name = None
+    gene_name = None
     canonical_transcript = None
     if gencode_gtf_path:
-        found_gene_name, canonical_transcript = (
+        gene_name, canonical_transcript = (
             rmats_long_utils.get_gene_name_and_canonical_transcript_from_gtf(
                 gene_id, gencode_gtf_path))
 
-    if orig_gene_name is None:
-        if found_gene_name:
-            gene_name = found_gene_name
-        else:
-            gene_name = gene_id
+    if orig_gene_name is not None:
+        gene_name = orig_gene_name
+    elif gene_name is None:
+        gene_name = gene_id
 
     if orig_main_transcript_ids:
         return orig_main_transcript_ids, gene_name
@@ -612,7 +617,8 @@ def determine_main_transcripts_and_gene_name(gene_id, orig_gene_name,
             rmats_long_utils.select_significant_transcripts(
                 gene_id, diff_transcripts_path))
 
-    if canonical_transcript:
+    if ((canonical_transcript
+         and (canonical_transcript not in main_transcript_ids))):
         main_transcript_ids.append(canonical_transcript)
 
     return main_transcript_ids, gene_name

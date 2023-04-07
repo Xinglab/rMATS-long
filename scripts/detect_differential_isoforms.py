@@ -31,6 +31,16 @@ def parse_args():
         type=int,
         default=1,
         help='The number of threads to use (default: %(default)s)')
+    parser.add_argument(
+        '--adj-pvalue',
+        type=float,
+        default=0.05,
+        help='The cutoff for adjusted p-value (default: %(default)s)')
+    parser.add_argument(
+        '--delta-proportion',
+        type=float,
+        default=0.1,
+        help='The cutoff for delta isoform proportion (default: %(default)s)')
 
     return parser.parse_args()
 
@@ -94,7 +104,8 @@ def calculate_isoform_proportion(script_dir, out_dir, abundance_path,
     rmats_long_utils.run_command(command)
 
 
-def count_significant_isoforms(script_dir, out_dir, python_executable):
+def count_significant_isoforms(script_dir, out_dir, python_executable,
+                               adj_pvalue, delta_proportion):
     count_script_path = os.path.join(script_dir,
                                      'count_significant_isoforms.py')
     diff_transcripts = os.path.join(out_dir, 'differential_transcripts.tsv')
@@ -102,7 +113,9 @@ def count_significant_isoforms(script_dir, out_dir, python_executable):
         out_dir, 'differential_transcripts_filtered.tsv')
     command = [
         python_executable, count_script_path, '--diff-transcripts',
-        diff_transcripts, '--out-tsv', filtered_transcripts
+        diff_transcripts, '--out-tsv', filtered_transcripts, '--adj-pvalue',
+        str(adj_pvalue), '--delta-proportion',
+        str(delta_proportion)
     ]
     rmats_long_utils.run_command(command)
 
@@ -116,7 +129,8 @@ def detect_differential_isoforms(args):
     sort_output(args.out_dir)
     calculate_isoform_proportion(script_dir, args.out_dir, args.abundance,
                                  args.group_1, args.group_2, python_executable)
-    count_significant_isoforms(script_dir, args.out_dir, python_executable)
+    count_significant_isoforms(script_dir, args.out_dir, python_executable,
+                               args.adj_pvalue, args.delta_proportion)
 
 
 def main():

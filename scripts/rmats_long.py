@@ -53,6 +53,11 @@ def parse_args():
         help=('Generate plots for the top "n" significant genes. To plot all'
               ' significant genes use --plot-top-n -1. (default %(default)s)'))
     parser.add_argument(
+        '--plot-file-type',
+        choices=['.pdf', '.png'],
+        default='.pdf',
+        help='The file type for output plots (default %(default)s))')
+    parser.add_argument(
         '--diff-transcripts',
         help=('The path to the differential transcript results. If given then'
               ' skip the differential isoform calculation.'))
@@ -70,8 +75,9 @@ def parse_args():
     return parser.parse_args()
 
 
-def process_genes(genes, temp_dir, sorted_paths, out_dir, group_1,
-                  group_1_name, group_2, group_2_name):
+def process_genes(genes, temp_dir, sorted_paths, other_gene_abundance_totals,
+                  out_dir, group_1, group_1_name, group_2, group_2_name,
+                  plot_file_type):
     with open(sorted_paths['abundance'], 'rt') as abundance_handle:
         with open(sorted_paths['updated_gtf'], 'rt') as updated_gtf_handle:
             with open(sorted_paths['diff_transcripts'],
@@ -82,21 +88,22 @@ def process_genes(genes, temp_dir, sorted_paths, out_dir, group_1,
                         process_genes_with_handles(
                             genes, temp_dir, abundance_handle,
                             updated_gtf_handle, diff_transcripts_handle,
-                            gencode_gtf_handle, out_dir, group_1, group_1_name,
-                            group_2, group_2_name)
+                            gencode_gtf_handle, other_gene_abundance_totals,
+                            out_dir, group_1, group_1_name, group_2,
+                            group_2_name, plot_file_type)
                 else:
-                    process_genes_with_handles(genes, temp_dir,
-                                               abundance_handle,
-                                               updated_gtf_handle,
-                                               diff_transcripts_handle, None,
-                                               out_dir, group_1, group_1_name,
-                                               group_2, group_2_name)
+                    process_genes_with_handles(
+                        genes, temp_dir, abundance_handle, updated_gtf_handle,
+                        diff_transcripts_handle, None,
+                        other_gene_abundance_totals, out_dir, group_1,
+                        group_1_name, group_2, group_2_name, plot_file_type)
 
 
 def process_genes_with_handles(genes, temp_dir, abundance_handle,
                                updated_gtf_handle, diff_transcripts_handle,
-                               gencode_gtf_handle, out_dir, group_1,
-                               group_1_name, group_2, group_2_name):
+                               gencode_gtf_handle, other_gene_abundance_totals,
+                               out_dir, group_1, group_1_name, group_2,
+                               group_2_name, plot_file_type):
     abundance_info = {
         'handle': abundance_handle,
         'next_line': None,
@@ -122,12 +129,13 @@ def process_genes_with_handles(genes, temp_dir, abundance_handle,
     for gene in genes:
         temp_files_for_gene = write_temp_files_for_gene(
             gene, temp_dir, abundance_info, updated_gtf_info,
-            diff_transcripts_info, gencode_gtf_info)
+            diff_transcripts_info, gencode_gtf_info,
+            other_gene_abundance_totals)
         process_gene(gene, temp_files_for_gene['abundance'],
                      temp_files_for_gene['updated_gtf'],
                      temp_files_for_gene['gencode_gtf'],
                      temp_files_for_gene['diff_transcripts'], out_dir, group_1,
-                     group_1_name, group_2, group_2_name)
+                     group_1_name, group_2, group_2_name, plot_file_type)
 
 
 def set_header_line_if_possible(info):
@@ -143,10 +151,13 @@ def set_header_line_if_possible(info):
 
 
 def write_temp_files_for_gene(gene, temp_dir, abundance_info, updated_gtf_info,
-                              diff_transcripts_info, gencode_gtf_info):
+                              diff_transcripts_info, gencode_gtf_info,
+                              other_gene_abundance_totals):
     temp_abundance_path = os.path.join(temp_dir,
                                        '{}_abundance.esp'.format(gene))
     write_temp_file_for_gene(gene, temp_abundance_path, abundance_info)
+    add_other_gene_totals_to_abundance(other_gene_abundance_totals[gene],
+                                       temp_abundance_path)
     temp_updated_gtf_path = os.path.join(temp_dir,
                                          '{}_updated.gtf'.format(gene))
     write_temp_file_for_gene(gene, temp_updated_gtf_path, updated_gtf_info)
@@ -200,12 +211,18 @@ def write_temp_file_for_gene(gene, temp_path, in_handle_info):
                 return
 
 
+def add_other_gene_totals_to_abundance(other_gene_abundance_totals, out_path):
+    with open(out_path, 'at') as out_handle:
+        rmats_long_utils.write_tsv_line(out_handle,
+                                        other_gene_abundance_totals)
+
+
 def process_gene(gene_id, abundance, updated_gtf, gencode_gtf,
                  diff_transcripts, out_dir, group_1, group_1_name, group_2,
-                 group_2_name):
+                 group_2_name, plot_file_type):
     visualize_isoforms(gene_id, abundance, updated_gtf, gencode_gtf,
                        diff_transcripts, out_dir, group_1, group_1_name,
-                       group_2, group_2_name)
+                       group_2, group_2_name, plot_file_type)
 
     significant_transcripts = rmats_long_utils.select_significant_transcripts(
         gene_id, diff_transcripts)
@@ -237,14 +254,16 @@ def count_significant_isoforms(out_dir, diff_transcripts, adj_pvalue,
 
 
 def detect_differential_isoforms(abundance, out_dir, group_1, group_2,
-                                 num_threads):
+                                 adj_pvalue, delta_proportion, num_threads):
     python_executable = rmats_long_utils.get_python_executable()
     script_dir = rmats_long_utils.get_script_dir()
     detect_script = os.path.join(script_dir, 'detect_differential_isoforms.py')
     command = [
         python_executable, detect_script, '--abundance', abundance,
         '--out-dir', out_dir, '--group-1', group_1, '--group-2', group_2,
-        '--num-threads',
+        '--adj-pvalue',
+        str(adj_pvalue), '--delta-proportion',
+        str(delta_proportion), '--num-threads',
         str(num_threads)
     ]
     rmats_long_utils.run_command(command)
@@ -252,7 +271,7 @@ def detect_differential_isoforms(abundance, out_dir, group_1, group_2,
 
 def visualize_isoforms(gene_id, abundance, updated_gtf, gencode_gtf,
                        diff_transcripts, out_dir, group_1, group_1_name,
-                       group_2, group_2_name):
+                       group_2, group_2_name, plot_file_type):
     python_executable = rmats_long_utils.get_python_executable()
     script_dir = rmats_long_utils.get_script_dir()
     visualize_script = os.path.join(script_dir, 'visualize_isoforms.py')
@@ -261,7 +280,8 @@ def visualize_isoforms(gene_id, abundance, updated_gtf, gencode_gtf,
         '--abundance', abundance, '--updated-gtf', updated_gtf,
         '--diff-transcripts', diff_transcripts, '--out-dir', out_dir,
         '--group-1', group_1, '--group-2', group_2, '--group-1-name',
-        group_1_name, '--group-2-name', group_2_name
+        group_1_name, '--group-2-name', group_2_name, '--plot-file-type',
+        plot_file_type
     ]
     if gencode_gtf:
         command.extend(['--gencode-gtf', gencode_gtf])
@@ -380,6 +400,33 @@ def get_gene_from_line_diff_transcripts(line_i, line):
     return columns[0]
 
 
+# The abundance file will be filtered down to each gene when running
+# scripts for that gene. The visualization needs to know the total read count
+# for each sample in order to calculate CPM. Add extra lines for each gene
+# with the total read count for other genes for each sample. Then when the
+# file is filtered to a single gene, the CPM can still be calculated.
+def get_other_gene_abundance_totals_by_gene(genes, abundance):
+    rows_by_gene = dict()
+    parsed = rmats_long_utils.parse_abundance_file(abundance)
+    total_by_sample = parsed['total_by_sample']
+    total_by_gene_by_sample = parsed['total_by_gene_by_sample']
+    sample_names = parsed['sample_names']
+    # ['transcript_ID', 'transcript_name', 'gene_ID']
+    shared_columns = ['NA', 'NA', 'NA']
+    for gene in genes:
+        sample_columns = list()
+        for sample in sample_names:
+            total = total_by_sample[sample]
+            gene_total = total_by_gene_by_sample[gene][sample]
+            non_gene_total = total - gene_total
+            sample_columns.append(
+                rmats_long_utils.format_float(non_gene_total))
+
+        rows_by_gene[gene] = shared_columns + sample_columns
+
+    return rows_by_gene
+
+
 def sort_files_by_genes(genes, abundance, updated_gtf, gencode_gtf,
                         diff_transcripts, temp_dir):
     sorted_paths = dict()
@@ -415,6 +462,7 @@ def rmats_long(args):
     else:
         detect_differential_isoforms(args.abundance, args.out_dir,
                                      args.group_1, args.group_2,
+                                     args.adj_pvalue, args.delta_proportion,
                                      args.num_threads)
         diff_transcripts_path = os.path.join(args.out_dir,
                                              'differential_transcripts.tsv')
@@ -430,12 +478,15 @@ def rmats_long(args):
     with tempfile.TemporaryDirectory(suffix='_tmp',
                                      prefix='rmats_long_',
                                      dir=args.out_dir) as temp_dir:
+        other_gene_abundance_totals = get_other_gene_abundance_totals_by_gene(
+            genes_to_process, args.abundance)
         sorted_paths = sort_files_by_genes(genes_to_process, args.abundance,
                                            args.updated_gtf, args.gencode_gtf,
                                            diff_transcripts_path, temp_dir)
-        process_genes(genes_to_process, temp_dir, sorted_paths, args.out_dir,
-                      args.group_1, args.group_1_name, args.group_2,
-                      args.group_2_name)
+        process_genes(genes_to_process, temp_dir, sorted_paths,
+                      other_gene_abundance_totals, args.out_dir, args.group_1,
+                      args.group_1_name, args.group_2, args.group_2_name,
+                      args.plot_file_type)
 
 
 def main():

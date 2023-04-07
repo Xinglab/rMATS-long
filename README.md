@@ -47,6 +47,7 @@ usage: rmats_long.py [-h] --abundance ABUNDANCE --updated-gtf UPDATED_GTF
                      GROUP_2 [--group-1-name GROUP_1_NAME]
                      [--group-2-name GROUP_2_NAME] --out-dir OUT_DIR
                      [--num-threads NUM_THREADS] [--plot-top-n PLOT_TOP_N]
+                     [--plot-file-type {.pdf,.png}]
                      [--diff-transcripts DIFF_TRANSCRIPTS]
                      [--adj-pvalue ADJ_PVALUE]
                      [--delta-proportion DELTA_PROPORTION]
@@ -61,7 +62,8 @@ options:
                         The path to the updated.gtf file from ESPRESSO
   --gencode-gtf GENCODE_GTF
                         The path to a gencode annotation.gtf file. Will be
-                        used to identify the Ensemble canonical isoform
+                        used to identify the Ensemble canonical isoform and
+                        the gene name
   --group-1 GROUP_1     The path to a file listing the sample names for group
                         1. The file should have a single line with the sample
                         names as a comma separated list. The sample names
@@ -79,6 +81,8 @@ options:
                         Generate plots for the top "n" significant genes. To
                         plot all significant genes use --plot-top-n -1.
                         (default 10)
+  --plot-file-type {.pdf,.png}
+                        The file type for output plots (default .pdf))
   --diff-transcripts DIFF_TRANSCRIPTS
                         The path to the differential transcript results. If
                         given then skip the differential isoform calculation.
@@ -104,7 +108,7 @@ The main output file written to `--out-dir` is `differential_transcripts.tsv` wh
 * `group_2_average_proportion`
 * `delta_isoform_proportion`: `group_1_average_proportion - group_2_average_proportion`
 
-The proportion columns were appended to the original output from DRIMSeq.
+The proportion columns were appended to the original output from DRIMSeq. `differential_transcripts_filtered.tsv` contains only the rows meeting the significance cutoffs.
 
 The `--out-dir` also contains these files output by DRIMSeq:
 * `differential_genes.tsv`
@@ -121,6 +125,8 @@ python detect_differential_isoforms.py -h
 usage: detect_differential_isoforms.py [-h] --abundance ABUNDANCE --out-dir
                                        OUT_DIR --group-1 GROUP_1 --group-2
                                        GROUP_2 [--num-threads NUM_THREADS]
+                                       [--adj-pvalue ADJ_PVALUE]
+                                       [--delta-proportion DELTA_PROPORTION]
 
 Detect differential isoform expression using DRIMSeq
 
@@ -137,6 +143,10 @@ options:
                         2.
   --num-threads NUM_THREADS
                         The number of threads to use (default: 1)
+  --adj-pvalue ADJ_PVALUE
+                        The cutoff for adjusted p-value (default: 0.05)
+  --delta-proportion DELTA_PROPORTION
+                        The cutoff for delta isoform proportion (default: 0.1)
 ```
 
 ```
@@ -163,16 +173,17 @@ options:
 
 ### Visualize Isoforms and Abundance
 
-[scripts/visualize_isoforms.py](scripts/visualize_isoforms.py) creates plots showing the isoform abundance and structure. The `--gene-id` and `--main-transcript-id` can be selected from the [differential isoform test](#detect-differential-isoforms). The `--abundance` and `--updated-gtf` files are from the ESPRESSO output
+[scripts/visualize_isoforms.py](scripts/visualize_isoforms.py) creates plots showing the isoform abundance and structure. The `--gene-id` can be selected from the [differential isoform test](#detect-differential-isoforms). The `--abundance` and `--updated-gtf` files are from the ESPRESSO output. By default, the most abundant isoforms for the gene will be plotted. Specific isoforms can be plotted with `--main-transcript-ids` or isoforms can be determined automatically if `--diff-transcripts` or `--gencode-gtf` are given. The most significant isoform and another significant isoform with opposite `delta_isoform_proportion` will be chosen from `--diff-transcripts` and the Ensembl canonical transcript will be selected based on a tag in the `--gencode-gtf`
 
-<!-- TODO add --gencode-gtf and --main-transcript-ids  -->
 ```
 python visualize_isoforms.py -h
 
 usage: visualize_isoforms.py [-h] --gene-id GENE_ID [--gene-name GENE_NAME]
                              --abundance ABUNDANCE --updated-gtf UPDATED_GTF
-                             --out-dir OUT_DIR [--plot-file-type {.pdf,.png}]
-                             --main-transcript-id MAIN_TRANSCRIPT_ID
+                             [--gencode-gtf GENCODE_GTF]
+                             [--diff-transcripts DIFF_TRANSCRIPTS] --out-dir
+                             OUT_DIR [--plot-file-type {.pdf,.png}]
+                             [--main-transcript-ids MAIN_TRANSCRIPT_IDS]
                              [--max-transcripts MAX_TRANSCRIPTS]
                              [--intron-scaling INTRON_SCALING]
                              [--group-1 GROUP_1] [--group-2 GROUP_2]
@@ -185,17 +196,31 @@ options:
   -h, --help            show this help message and exit
   --gene-id GENE_ID     The gene_id to visualize
   --gene-name GENE_NAME
-                        The name for the gene (used as plot title). --gene-id
-                        is used as a default
+                        The name for the gene (used as plot title). If not
+                        given then the gene_name from --gencode-gtf will be
+                        used. If no other name is found then --gene-id is used
+                        as a default
   --abundance ABUNDANCE
                         The path to the abundance.esp file from ESPRESSO
   --updated-gtf UPDATED_GTF
                         The path to the updated.gtf file from ESPRESSO
+  --gencode-gtf GENCODE_GTF
+                        The path to a gencode annotation.gtf file. Can be used
+                        to identify the gene_name and Ensemble canonical
+                        isoform
+  --diff-transcripts DIFF_TRANSCRIPTS
+                        The path to the differential transcript results. Can
+                        be used to determine --main-transcript-ids
   --out-dir OUT_DIR     The path to use as the output directory
   --plot-file-type {.pdf,.png}
                         The file type for output plots (default .pdf))
-  --main-transcript-id MAIN_TRANSCRIPT_ID
-                        The transcript_id of the main transcript to plot
+  --main-transcript-ids MAIN_TRANSCRIPT_IDS
+                        A comma separated list of transcript IDs to plot as
+                        the main transcripts. If not given then the most
+                        significant isoform from --diff-transcripts, a second
+                        significant isoform with a delta proportion in the
+                        opposite direction, and the Ensembl canonical isoform
+                        from --gencode-gtf will be used if possible
   --max-transcripts MAX_TRANSCRIPTS
                         How many transcripts to plot individually. The
                         remaining transcripts in the gene will be grouped
@@ -214,7 +239,6 @@ options:
                         A name for group 1 (default group 1)
   --group-2-name GROUP_2_NAME
                         A name for group 2 (default group 2)
-
 ```
 
 ### Classify Isoform Differences
@@ -243,13 +267,13 @@ The output is a tab-delimited file consisting of four fields:
 
 **Note:** Designation of transcript isoforms 1 and 2 is completely arbitrary. Moreover, if the two transcript isoforms contained in the input GTF file exhibit a combination of multiple alternative splicing events, each event will be reported as its own line in the output file.
 
-<!-- TODO add --extra-gtf -->
 ```
 python classify_isoform_differences.py -h
 
 usage: classify_isoform_differences.py [-h] --main-transcript-id
-                                       MAIN_TRANSCRIPT_ID --gtf GTF --out-tsv
-                                       OUT_TSV
+                                       MAIN_TRANSCRIPT_ID --updated-gtf
+                                       UPDATED_GTF [--gencode-gtf GENCODE_GTF]
+                                       --out-tsv OUT_TSV
 
 Compare the structures of isoforms within a gene
 
@@ -257,7 +281,11 @@ options:
   -h, --help            show this help message and exit
   --main-transcript-id MAIN_TRANSCRIPT_ID
                         The transcript_id of the main isoform in the .gtf file
-  --gtf GTF             The path to a .gtf describing the isoforms
+  --updated-gtf UPDATED_GTF
+                        The path to the updated.gtf file from ESPRESSO
+  --gencode-gtf GENCODE_GTF
+                        The path to a gencode annotation.gtf file. Can be used
+                        to compare against isoforms not detected by ESPRESSO
   --out-tsv OUT_TSV     The path of the output file
 ```
 
@@ -279,8 +307,6 @@ options:
 ```
 
 ### Example
-
-<!-- TODO update example to use rmats_long.py and also updated individual commands -->
 
 Example data is provided in [example/data.tar.gz](example/data.tar.gz). Unpack that file with:
 ```
@@ -306,7 +332,7 @@ The example data is based on cell line data from [https://doi.org/10.1126/sciadv
 
 The first step is to run [ESPRESSO](https://github.com/Xinglab/espresso) using the provided reference data and alignment files. The result files from ESPRESSO are included in the example data
 
-Next, detect differential isoform usage. The sample names from the abundance file are split into the provided `group_1.txt`:
+Next run [scripts/rmats_long.py](scripts/rmats_long.py) which will perform all of the analysis steps and write output files to `./example_out/`. It requires the sample names from the abundance file to be split into groups as done in `group_1.txt`:
 ```
 pc3e_1,pc3e_2,pc3e_3
 ```
@@ -316,35 +342,50 @@ and `group_2.txt`:
 gs689_1,gs689_2,gs689_3
 ```
 
-Run [scripts/detect_differential_isoforms.py](scripts/detect_differential_isoforms.py):
+Here is the main command:
 ```
-python ./scripts/detect_differential_isoforms.py --abundance ./example/samples_N2_R0_abundance.esp --out-dir ./example_out --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --num-threads 1
+python ./scripts/rmats_long.py --abundance ./example/samples_N2_R0_abundance.esp --updated-gtf ./example/samples_N2_R0_updated.gtf --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --group-1-name PC3E --group-2-name GS689 --out-dir ./example_out --plot-file-type .png
 ```
 
-That should print: `found 3 isoforms from 1 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.1`. One significant row from `example_out/differential_transcripts.tsv` is:
+[scripts/rmats_long.py](scripts/rmats_long.py) will run other commands. For this example it first runs:
+```
+python ./scripts/detect_differential_isoforms.py --abundance ./example/samples_N2_R0_abundance.esp --out-dir ./example_out --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --adj-pvalue 0.05 --delta-proportion 0.1 --num-threads 1
+```
+
+That should print: `found 3 isoforms from 1 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.1`. One significant row from `example_out/differential_transcripts_filtered.tsv` is:
 ```
 gene_id	feature_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion
-ENSG00000198561.16	ENST00000358694.10	136.621877592083	1	1.4587925218991e-31	4.81401532226702e-30	0.006	0.0035	0.0033	0.3767	0.4791	0.4069	0.0043	0.4209	-0.4166
+ENSG00000198561.16	ENST00000358694.10	136.52702546919	1	1.53016788937297e-31	5.04955403493079e-30	0.006	0.0035	0.0033	0.3767	0.4791	0.4069	0.0043	0.4209	-0.4166
 ```
 
-The `gene_id` and `feature_id` from that row can be used with [scripts/visualize_isoforms.py](scripts/visualize_isoforms.py). The name of that gene is CTNND1:
+Next [scripts/rmats_long.py](scripts/rmats_long.py) will run a similar command to what is below (but using some temporary files):
 ```
-python scripts/visualize_isoforms.py --gene-id ENSG00000198561.16 --gene-name CTNND1 --main-transcript-id ENST00000358694.10 --abundance ./example/samples_N2_R0_abundance.esp --updated-gtf ./example/samples_N2_R0_updated.gtf --out-dir ./example_out --plot-file-type .png --intron-scaling 3 --group-1 ./example/group_1.txt --group-1-name PC3E --group-2 ./example/group_2.txt --group-2-name GS689
+python ./scripts/visualize_isoforms.py --gene-id ENSG00000198561.16 --abundance ./example/samples_N2_R0_abundance.esp --updated-gtf ./example/samples_N2_R0_updated.gtf --diff-transcripts ./example_out/differential_transcripts.tsv --out-dir ./example_out --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --group-1-name PC3E --group-2-name GS689 --plot-file-type .png --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf
 ```
 
-That will produce `example_out/ENSG00000198561.16_abundance.png` and `example_out/ENSG00000198561.16_structure.png`:
+The `--gene-id` is the significant gene which can be found in `./example_out/differential_transcripts_filtered.tsv`. The command will produce `example_out/ENSG00000198561.16_abundance.png`:
 ![CTNND1 abundance](example_out/ENSG00000198561.16_abundance.png)
 
+And `example_out/ENSG00000198561.16_structure.png`
 ![CTNND1 structure](example_out/ENSG00000198561.16_structure.png)
 
 The plots show that ENST00000358694.10 is abundant in GS689 samples and ENST00000529986.5 is abundant in PC3E samples. There are also changes in abundance for other isoforms
 
-The differences among transcripts within that gene can be determined with [scripts/classify_isoform_differences.py](scripts/classify_isoform_differences.py)
-
+[scripts/rmats_long.py](scripts/rmats_long.py) will determine the differences among transcripts within that gene in terms of splicing events with:
 ```
-python ./scripts/classify_isoform_differences.py --main-transcript-id ENST00000358694.10 --gtf ./example/samples_N2_R0_updated.gtf --out-tsv ./example_out/isoform_differences.tsv
+python ./scripts/classify_isoform_differences.py --updated-gtf ./example/samples_N2_R0_updated.gtf --out-tsv ./example_out/ENSG00000198561.16_isoform_differences_from_ENST00000358694.10.tsv --main-transcript-id ENST00000358694.10 --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf
+```
+and
+```
+python ./scripts/classify_isoform_differences.py --updated-gtf ./example/samples_N2_R0_updated.gtf --out-tsv ./example_out/ENSG00000198561.16_isoform_differences_from_ENST00000399050.10.tsv --main-transcript-id ENST00000399050.10 --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf
 ```
 
-`./example_out/isoform_differences.tsv` shows that the difference between ENST00000358694.10 and ENST00000529986.5 is a single complex event: `ENST00000358694.10	ENST00000529986.5	COMPLEX	NA`. From `example_out/ENSG00000198561.16_structure.png` that complex event is the skipping of two consecutive exons
+ENST00000358694.10 is chosen for comparison because it is the most significant isoform for this gene from `./example_out/differential_transcripts.tsv`. ENST00000399050.10 is chosen for comparison because it is the transcript with `tag "Ensembl_canonical"` for this gene in `./example/gencode.v43.annotation_filtered.gtf`
 
-`./example_out/isoform_differences.tsv` shows that the difference between ENST00000358694.10 and ENST00000428599.6 is a single skipped exon event: `ENST00000358694.10	ENST00000428599.6	SE	chr11:57789037:57789155:+`
+From either file it can be seen that those two isoforms differ by an A5SS event and two SE events:
+```
+transcript1	transcript2	event	coordinates
+ENST00000399050.10	ENST00000358694.10	A5SS	chr11:57761802:57762046:+;chr11:57761802:57762119:+
+ENST00000399050.10	ENST00000358694.10	SE	chr11:57806461:57806478:+
+ENST00000399050.10	ENST00000358694.10	SE	chr11:57815915:57816001:+
+```

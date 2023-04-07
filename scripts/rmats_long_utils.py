@@ -208,6 +208,12 @@ def parse_abundance_file(abundance_path):
             gene = row['gene_ID']
             transcript = row['transcript_ID']
             if gene == 'NA':
+                # Only update the total read count for each sample
+                for sample in sample_names:
+                    count = parse_float(row[sample])
+                    old_total = total_by_sample.get(sample, 0)
+                    total_by_sample[sample] = old_total + count
+
                 continue
 
             gene_total_by_sample = total_by_gene_by_sample.get(gene)

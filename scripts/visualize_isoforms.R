@@ -146,7 +146,7 @@ rename_transcripts_and_define_factors <- function(data, max_transcripts,
     ## The input file had the transcripts in sorted order
     sorted_transcripts <- base::unique(data$transcript)
     num_transcripts <- base::length(sorted_transcripts)
-    ## Combine additional transcripts into a single bar labeled 'Others"
+    ## Combine additional transcripts into a single bar labeled 'Others'
     named_transcripts <- base::vector(mode='character')
     other_transcripts <- base::vector(mode='character')
     for (transcript_i in 1:num_transcripts) {
@@ -188,6 +188,19 @@ rename_transcripts_and_define_factors <- function(data, max_transcripts,
     return(new_df)
 }
 
+select_transcript_colors <- function(data, transcript_colors) {
+    unique_transcripts <- base::unique(data$transcript)
+    num_needed_colors <- base::length(unique_transcripts)
+    final_colors <- transcript_colors[1:num_needed_colors - 1]
+    if ('Others' %in% unique_transcripts) {
+        last_color <- utils::tail(transcript_colors, n=1)
+        final_colors <- base::append(final_colors, last_color)
+    } else {
+        next_color <- transcript_colors[num_needed_colors]
+        final_colors <- base::append(final_colors, next_color)
+    }
+    return(final_colors)
+}
 
 main <- function() {
     max_transcripts <- base::as.integer(max_transcripts_str)
@@ -203,10 +216,11 @@ main <- function() {
                                                      group_colors, data)
     data <- rename_transcripts_and_define_factors(data, max_transcripts,
                                                   unique_samples, unique_groups)
+    final_transcript_colors <- select_transcript_colors(data, transcript_colors)
     font_size <- 10
-    prop_plot <- plot_proportion(data, group_colors, transcript_colors,
+    prop_plot <- plot_proportion(data, group_colors, final_transcript_colors,
                                  unique_sample_colors, font_size)
-    cpm_plot <- plot_cpm(data, group_colors, transcript_colors, font_size)
+    cpm_plot <- plot_cpm(data, group_colors, final_transcript_colors, font_size)
     combined <- combine_plots(prop_plot, cpm_plot, font_size)
     save_plot(num_samples, combined, out_plot_path)
 }
