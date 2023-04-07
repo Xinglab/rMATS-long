@@ -1,5 +1,6 @@
 bioconductor-biocparallel=1.32.*
-bioconductor-drimseq=1.26.*
+bioconductor-drimseq=1.26.0
+icu=58.* # drimseq seems to depend on icu 58
 matplotlib=3.7.*
 networkx=2.8.*
 numpy=1.24.*
