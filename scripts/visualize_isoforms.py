@@ -2,7 +2,6 @@
 import argparse
 import os
 import os.path
-import subprocess
 import sys
 
 import matplotlib
@@ -11,6 +10,8 @@ matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+import rmats_long_utils
 
 
 def transcript_colors():
@@ -41,10 +42,11 @@ def parse_args():
     parser.add_argument('--gene-id',
                         required=True,
                         help='The gene_id to visualize')
-    parser.add_argument('--gene-name',
-                        required=False,
-                        help=('The name for the gene (used as plot title).'
-                              ' --gene-id is used as a default'))
+    parser.add_argument(
+        '--gene-name',
+        help=('The name for the gene (used as plot title). If not given then'
+              ' the gene_name from --gencode-gtf will be used. If no other'
+              ' name is found then --gene-id is used as a default'))
     parser.add_argument(
         '--abundance',
         required=True,
@@ -52,6 +54,14 @@ def parse_args():
     parser.add_argument('--updated-gtf',
                         required=True,
                         help='The path to the updated.gtf file from ESPRESSO')
+    parser.add_argument(
+        '--gencode-gtf',
+        help=('The path to a gencode annotation.gtf file. Can be used to'
+              ' identify the gene_name and Ensemble canonical isoform'))
+    parser.add_argument(
+        '--diff-transcripts',
+        help=('The path to the differential transcript results. Can be used to'
+              ' determine --main-transcript-ids'))
     parser.add_argument('--out-dir',
                         required=True,
                         help='The path to use as the output directory')
@@ -61,9 +71,13 @@ def parse_args():
         default='.pdf',
         help='The file type for output plots (default %(default)s))')
     parser.add_argument(
-        '--main-transcript-id',
-        required=True,
-        help='The transcript_id of the main transcript to plot')
+        '--main-transcript-ids',
+        help=(
+            'A comma separated list of transcript IDs to plot as the main'
+            ' transcripts. If not given then the most significant isoform'
+            ' from --diff-transcripts, a second significant isoform with a'
+            ' delta proportion in the opposite direction, and the Ensembl'
+            ' canonical isoform from --gencode-gtf will be used if possible'))
     parser.add_argument(
         '--max-transcripts',
         type=int,
@@ -106,88 +120,13 @@ def parse_args():
         if not args.group_2:
             parser.error('--group-1 given without --group-2')
 
-        args.group_1 = parse_group_file(args.group_1)
-        args.group_2 = parse_group_file(args.group_2)
+        args.group_1 = rmats_long_utils.parse_group_file(args.group_1)
+        args.group_2 = rmats_long_utils.parse_group_file(args.group_2)
 
-    if args.gene_name is None:
-        args.gene_name = args.gene_id
+    if args.main_transcript_ids:
+        args.main_transcript_ids = args.main_transcript_ids.split(',')
 
     return args
-
-
-def parse_group_file(file_path):
-    groups = None
-    with open(file_path, 'rt') as handle:
-        for line_i, line in enumerate(handle):
-            if line and line_i != 0:
-                print('expected only 1 line in {}'.format(file_path))
-
-            groups = line.rstrip('\n').split(',')
-
-    if not groups:
-        raise Exception('could not parse groups from: {}'.format(file_path))
-
-    return groups
-
-
-def read_abundance_file(abundance_path):
-    counts_by_gene_by_transcript_by_sample = dict()
-    total_by_gene_by_sample = dict()
-    total_by_sample = dict()
-    expected_headers = ['transcript_ID', 'transcript_name', 'gene_ID']
-    with open(abundance_path, 'rt') as in_handle:
-        for line_i, line in enumerate(in_handle):
-            in_columns = line.rstrip('\n').split('\t')
-            if line_i == 0:
-                in_headers = in_columns
-                first_headers = in_headers[:len(expected_headers)]
-                if first_headers != expected_headers:
-                    raise Exception('expected headers in {} to start with {}'
-                                    ' but found {}'.format(
-                                        abundance_path, expected_headers,
-                                        first_headers))
-
-                sample_names = in_headers[len(expected_headers):]
-                continue
-
-            row = dict(zip(in_headers, in_columns))
-            gene = row['gene_ID']
-            transcript = row['transcript_ID']
-            if gene == 'NA':
-                continue
-
-            gene_total_by_sample = total_by_gene_by_sample.get(gene)
-            if not gene_total_by_sample:
-                gene_total_by_sample = dict()
-                total_by_gene_by_sample[gene] = gene_total_by_sample
-
-            counts_by_transcript_by_sample = counts_by_gene_by_transcript_by_sample.get(
-                gene)
-            if not counts_by_transcript_by_sample:
-                counts_by_transcript_by_sample = dict()
-                counts_by_gene_by_transcript_by_sample[gene] = (
-                    counts_by_transcript_by_sample)
-
-            counts_by_sample = counts_by_transcript_by_sample.get(transcript)
-            if not counts_by_sample:
-                counts_by_sample = dict()
-                counts_by_transcript_by_sample[transcript] = counts_by_sample
-
-            for sample in sample_names:
-                count = float(row[sample])
-                old_total = total_by_sample.get(sample, 0)
-                total_by_sample[sample] = old_total + count
-                old_gene_total = gene_total_by_sample.get(sample, 0)
-                gene_total_by_sample[sample] = old_gene_total + count
-                counts_by_sample[sample] = count
-
-    return {
-        'counts_by_gene_by_transcript_by_sample':
-        counts_by_gene_by_transcript_by_sample,
-        'total_by_gene_by_sample': total_by_gene_by_sample,
-        'total_by_sample': total_by_sample,
-        'sample_names': sample_names
-    }
 
 
 def calculate_transcript_rows(counts_by_transcript_by_sample,
@@ -195,7 +134,6 @@ def calculate_transcript_rows(counts_by_transcript_by_sample,
                               group_2, group_1_name, group_2_name):
     rows_by_transcript = dict()
     for transcript, counts_by_sample in counts_by_transcript_by_sample.items():
-        counts_by_sample = counts_by_transcript_by_sample[transcript]
         for sample_i, sample in enumerate(group_1 + group_2):
             is_group_1 = sample_i < len(group_1)
             gene_total = gene_total_by_sample[sample]
@@ -233,11 +171,11 @@ def calculate_transcript_rows(counts_by_transcript_by_sample,
 
 # Sort transcripts by average proportion across samples.
 # The sort order determines the color.
-# The main_transcript_id is always first in the sort order.
-def sort_transcripts(rows_by_transcript, main_transcript_id):
+# The main_transcript_ids are first in the sort order.
+def sort_transcripts(rows_by_transcript, main_transcript_ids):
     average_proportion_by_transcript = dict()
     for transcript, rows in rows_by_transcript.items():
-        if transcript == main_transcript_id:
+        if transcript in main_transcript_ids:
             continue
 
         total_prop = 0
@@ -264,13 +202,13 @@ def sort_transcripts(rows_by_transcript, main_transcript_id):
     sorted_transcripts = sorted(average_proportion_by_transcript,
                                 key=sort_key_func,
                                 reverse=True)
-    return [main_transcript_id] + sorted_transcripts
+    return main_transcript_ids + sorted_transcripts
 
 
-def calc_proportion_and_cpm(abundance_path, gene_id, main_transcript_id,
+def calc_proportion_and_cpm(abundance_path, gene_id, main_transcript_ids,
                             group_1, group_2, group_1_name, group_2_name,
                             cpm_and_proportion_path):
-    abundance_details = read_abundance_file(abundance_path)
+    abundance_details = rmats_long_utils.parse_abundance_file(abundance_path)
     counts_by_gene_by_transcript_by_sample = (
         abundance_details['counts_by_gene_by_transcript_by_sample'])
     total_by_gene_by_sample = abundance_details['total_by_gene_by_sample']
@@ -280,6 +218,11 @@ def calc_proportion_and_cpm(abundance_path, gene_id, main_transcript_id,
         group_1 = sample_names
         group_2 = list()
 
+    if sample_names[0] in group_1:
+        group_name_of_first_sample = group_1_name
+    else:
+        group_name_of_first_sample = group_2_name
+
     counts_by_transcript_by_sample = (
         counts_by_gene_by_transcript_by_sample[gene_id])
     gene_total_by_sample = total_by_gene_by_sample[gene_id]
@@ -287,37 +230,31 @@ def calc_proportion_and_cpm(abundance_path, gene_id, main_transcript_id,
         counts_by_transcript_by_sample, gene_total_by_sample, total_by_sample,
         group_1, group_2, group_1_name, group_2_name)
     sorted_transcripts = sort_transcripts(rows_by_transcript,
-                                          main_transcript_id)
+                                          main_transcript_ids)
     with open(cpm_and_proportion_path, 'wt') as out_handle:
         out_headers = [
             'gene', 'transcript', 'sample', 'group', 'cpm', 'proportion'
         ]
-        write_tsv_line(out_handle, out_headers)
+        rmats_long_utils.write_tsv_line(out_handle, out_headers)
         for transcript in sorted_transcripts:
-            transcript_rows = rows_by_transcript[transcript]
+            transcript_rows = rows_by_transcript.get(transcript)
+            if not transcript_rows:
+                # The main_transcript_ids might not have any read counts.
+                # Add a line to the output with 0 values.
+                out_columns = [
+                    gene_id, transcript, sample_names[0],
+                    group_name_of_first_sample, '0', '0'
+                ]
+                rmats_long_utils.write_tsv_line(out_handle, out_columns)
+                continue
+
             for row in transcript_rows:
                 out_columns = [
                     gene_id, transcript, row['sample'], row['group'],
-                    na_float_to_str(row['cpm']),
-                    na_float_to_str(row['proportion'])
+                    rmats_long_utils.round_float_string(row['cpm']),
+                    rmats_long_utils.round_float_string(row['proportion'])
                 ]
-                write_tsv_line(out_handle, out_columns)
-
-
-def na_float_to_str(na_float):
-    if na_float == 'NA':
-        return na_float
-
-    return str(round(na_float, 4))
-
-
-def write_tsv_line(handle, columns):
-    handle.write('{}\n'.format('\t'.join(columns)))
-
-
-def run_command(command):
-    print('running: {}'.format(command))
-    subprocess.run(command, check=True)
+                rmats_long_utils.write_tsv_line(out_handle, out_columns)
 
 
 def plot_abundance(out_path, cpm_and_proportion_path, max_transcripts):
@@ -332,20 +269,14 @@ def plot_abundance(out_path, cpm_and_proportion_path, max_transcripts):
         str(max_transcripts), transcript_colors_string, group_colors_string,
         out_path
     ]
-    run_command(command)
+    rmats_long_utils.run_command(command)
 
 
 # The proportion file has the transcripts in sorted order.
 def read_transcript_ids(proportion_path):
     transcript_ids = list()
     with open(proportion_path, 'rt') as handle:
-        for line_i, line in enumerate(handle):
-            columns = line.rstrip('\n').split('\t')
-            if line_i == 0:
-                headers = columns
-                continue
-
-            row = dict(zip(headers, columns))
+        for row in rmats_long_utils.row_iterator_for_tsv_with_header(handle):
             transcript = row['transcript']
             if transcript in transcript_ids:
                 continue
@@ -359,11 +290,10 @@ def read_transcript_details(gtf_path, transcript_ids):
     details_by_transcript = dict()
     with open(gtf_path, 'rt') as handle:
         for line in handle:
-            if line.startswith('#'):
-                # skip comment lines
+            parsed = rmats_long_utils.parse_gtf_line(line)
+            if parsed is None:
                 continue
 
-            parsed = parse_gtf_line(line)
             transcript_id = parsed['attributes'].get('transcript_id')
             if transcript_id not in transcript_ids:
                 continue
@@ -387,64 +317,18 @@ def read_transcript_details(gtf_path, transcript_ids):
 
             exons.append((parsed['start'], parsed['end']))
 
-    found_transcripts = set(details_by_transcript)
-    expected_transcripts = set(transcript_ids)
-    if found_transcripts != expected_transcripts:
-        raise Exception(
-            'Did not find all expected transcripts: {}.'
-            ' Missing: {}'.format(
-                expected_transcripts,
-                expected_transcripts.difference(found_transcripts)))
-
     return details_by_transcript
 
 
-def parse_gtf_line(line):
-    columns = line.rstrip('\n').split('\t')
-    chr_name = columns[0]
-    source = columns[1]
-    feature = columns[2]
-    start_str = columns[3]
-    start = int(start_str)
-    end_str = columns[4]
-    end = int(end_str)
-    score = columns[5]
-    strand = columns[6]
-    frame = columns[7]
-    attributes_str = columns[8]
-    attributes = parse_gtf_attributes(attributes_str)
-    return {
-        'chr': chr_name,
-        'source': source,
-        'feature': feature,
-        'start': start,
-        'end': end,
-        'score': score,
-        'strand': strand,
-        'frame': frame,
-        'attributes': attributes,
-        'line': line
-    }
-
-
-def parse_gtf_attributes(attributes_str):
-    attributes = dict()
-    attribute_pairs = attributes_str.split(';')
-    for attribute_pair in attribute_pairs:
-        attribute_pair = attribute_pair.strip()
-        first_space = attribute_pair.find(' ')
-        if first_space <= 0:
+def add_transcript_details(transcript_details, gtf_path, transcript_ids):
+    new_details = read_transcript_details(gtf_path, transcript_ids)
+    for transcript in transcript_ids:
+        if transcript in transcript_details:
             continue
 
-        key = attribute_pair[:first_space]
-        value = attribute_pair[first_space + 1:]
-        if value[0] == '"' and value[-1] == '"':
-            # remove quotes
-            value = value[1:-1]
-
-        attributes[key] = value
-
-    return attributes
+        found_details = new_details.get(transcript)
+        if found_details:
+            transcript_details[transcript] = found_details
 
 
 def get_exon_length(exon):
@@ -641,16 +525,32 @@ def apply_intron_scaling(plot_coords_by_transcript, intron_scaling,
     return region_length - num_removed_units
 
 
-def plot_structure(out_path, proportion_path, gtf_path, gene_name,
-                   main_transcript_id, max_transcripts, intron_scaling):
+def plot_structure(out_path, proportion_path, gtf_path, gencode_gtf_path,
+                   gene_name, main_transcript_ids, max_transcripts,
+                   intron_scaling):
     colors = transcript_colors()
-    transcript_ids = read_transcript_ids(proportion_path)
-    transcript_details = read_transcript_details(gtf_path, transcript_ids)
-    transcripts_to_plot = transcript_ids[:max_transcripts]
+    proportion_transcript_ids = read_transcript_ids(proportion_path)
+    all_transcript_ids = set(proportion_transcript_ids).union(
+        set(main_transcript_ids))
+    transcript_details = read_transcript_details(gtf_path, all_transcript_ids)
+    if gencode_gtf_path:
+        add_transcript_details(transcript_details, gencode_gtf_path,
+                               all_transcript_ids)
+
+    found_transcripts = set(transcript_details)
+    if found_transcripts != all_transcript_ids:
+        raise Exception('Did not find all expected transcripts: {}.'
+                        ' Missing: {}'.format(
+                            all_transcript_ids,
+                            all_transcript_ids.difference(found_transcripts)))
+
+    transcripts_to_plot = main_transcript_ids
+    for transcript_id in proportion_transcript_ids:
+        if transcript_id not in transcripts_to_plot:
+            transcripts_to_plot.append(transcript_id)
+
+    transcripts_to_plot = transcripts_to_plot[:max_transcripts]
     num_transcripts = len(transcripts_to_plot)
-    if main_transcript_id not in transcripts_to_plot:
-        raise Exception('Did not find data for main transcript {}'.format(
-            main_transcript_id))
 
     fig = plt.figure(figsize=(12, 4), dpi=300)
     ax = fig.add_subplot(111)
@@ -692,8 +592,44 @@ def plot_structure(out_path, proportion_path, gtf_path, gene_name,
     plt.savefig(out_path, dpi=300, pad_inches=0)
 
 
+def determine_main_transcripts_and_gene_name(gene_id, orig_gene_name,
+                                             orig_main_transcript_ids,
+                                             gencode_gtf_path,
+                                             diff_transcripts_path):
+    gene_name = None
+    canonical_transcript = None
+    if gencode_gtf_path:
+        gene_name, canonical_transcript = (
+            rmats_long_utils.get_gene_name_and_canonical_transcript_from_gtf(
+                gene_id, gencode_gtf_path))
+
+    if orig_gene_name is not None:
+        gene_name = orig_gene_name
+    elif gene_name is None:
+        gene_name = gene_id
+
+    if orig_main_transcript_ids:
+        return orig_main_transcript_ids, gene_name
+
+    main_transcript_ids = list()
+    if diff_transcripts_path:
+        main_transcript_ids.extend(
+            rmats_long_utils.select_significant_transcripts(
+                gene_id, diff_transcripts_path))
+
+    if ((canonical_transcript
+         and (canonical_transcript not in main_transcript_ids))):
+        main_transcript_ids.append(canonical_transcript)
+
+    return main_transcript_ids, gene_name
+
+
 def visualize_isoforms(args):
-    create_output_dir(args.out_dir)
+    rmats_long_utils.create_output_dir(args.out_dir)
+    main_transcript_ids, gene_name = determine_main_transcripts_and_gene_name(
+        args.gene_id, args.gene_name, args.main_transcript_ids,
+        args.gencode_gtf, args.diff_transcripts)
+
     cpm_and_proportion_file = os.path.join(
         args.out_dir, '{}_cpm_and_proportion.tsv'.format(args.gene_id))
     abundance_plot_file = os.path.join(
@@ -703,25 +639,15 @@ def visualize_isoforms(args):
         args.out_dir, '{}_structure{}'.format(args.gene_id,
                                               args.plot_file_type))
 
-    calc_proportion_and_cpm(args.abundance, args.gene_id,
-                            args.main_transcript_id, args.group_1,
-                            args.group_2, args.group_1_name, args.group_2_name,
-                            cpm_and_proportion_file)
+    calc_proportion_and_cpm(args.abundance, args.gene_id, main_transcript_ids,
+                            args.group_1, args.group_2, args.group_1_name,
+                            args.group_2_name, cpm_and_proportion_file)
     plot_abundance(abundance_plot_file, cpm_and_proportion_file,
                    args.max_transcripts)
     plot_structure(structure_plot_file, cpm_and_proportion_file,
-                   args.updated_gtf, args.gene_name, args.main_transcript_id,
-                   args.max_transcripts, args.intron_scaling)
-
-
-def create_output_dir(dir_path):
-    if os.path.exists(dir_path):
-        if not os.path.isdir(dir_path):
-            raise Exception('{} already exists and is a file'.format(dir_path))
-
-        return
-
-    os.makedirs(dir_path)
+                   args.updated_gtf, args.gencode_gtf, gene_name,
+                   main_transcript_ids, args.max_transcripts,
+                   args.intron_scaling)
 
 
 def main():
