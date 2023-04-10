@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument(
         '--gencode-gtf',
         help=('The path to a gencode annotation.gtf file. Will be used to'
-              ' identify the Ensemble canonical isoform and the gene name'))
+              ' identify the Ensembl canonical isoform and the gene name'))
     parser.add_argument(
         '--group-1',
         required=True,

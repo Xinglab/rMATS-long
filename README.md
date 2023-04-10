@@ -62,8 +62,8 @@ options:
                         The path to the updated.gtf file from ESPRESSO
   --gencode-gtf GENCODE_GTF
                         The path to a gencode annotation.gtf file. Will be
-                        used to identify the Ensemble canonical isoform and
-                        the gene name
+                        used to identify the Ensembl canonical isoform and the
+                        gene name
   --group-1 GROUP_1     The path to a file listing the sample names for group
                         1. The file should have a single line with the sample
                         names as a comma separated list. The sample names
@@ -206,7 +206,7 @@ options:
                         The path to the updated.gtf file from ESPRESSO
   --gencode-gtf GENCODE_GTF
                         The path to a gencode annotation.gtf file. Can be used
-                        to identify the gene_name and Ensemble canonical
+                        to identify the gene_name and Ensembl canonical
                         isoform
   --diff-transcripts DIFF_TRANSCRIPTS
                         The path to the differential transcript results. Can

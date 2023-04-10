@@ -57,7 +57,7 @@ def parse_args():
     parser.add_argument(
         '--gencode-gtf',
         help=('The path to a gencode annotation.gtf file. Can be used to'
-              ' identify the gene_name and Ensemble canonical isoform'))
+              ' identify the gene_name and Ensembl canonical isoform'))
     parser.add_argument(
         '--diff-transcripts',
         help=('The path to the differential transcript results. Can be used to'
