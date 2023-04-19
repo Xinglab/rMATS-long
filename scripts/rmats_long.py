@@ -47,11 +47,11 @@ def parse_args():
         default=1,
         help='The number of threads to use (default %(default)s)')
     parser.add_argument(
-        '--plot-top-n',
+        '--process-top-n',
         type=int,
-        default=10,
-        help=('Generate plots for the top "n" significant genes. To plot all'
-              ' significant genes use --plot-top-n -1. (default %(default)s)'))
+        help=('Generate plots and classify isoform differences for the'
+              ' top "n" significant genes. By default all significant'
+              ' genes are processed'))
     parser.add_argument(
         '--plot-file-type',
         choices=['.pdf', '.png'],
@@ -71,13 +71,20 @@ def parse_args():
         type=float,
         default=0.1,
         help='The cutoff for delta isoform proportion (default %(default)s)')
+    parser.add_argument(
+        '--compare-all-within-gene',
+        action='store_true',
+        help=('Compare the most significant isoform to all other isoforms in'
+              ' the gene. By default, the most significant isoform is only'
+              ' compared to the most significant isoform with a delta'
+              ' proportion in the opposite direction.'))
 
     return parser.parse_args()
 
 
 def process_genes(genes, temp_dir, sorted_paths, other_gene_abundance_totals,
                   out_dir, group_1, group_1_name, group_2, group_2_name,
-                  plot_file_type):
+                  plot_file_type, compare_all_within_gene, summary):
     with open(sorted_paths['abundance'], 'rt') as abundance_handle:
         with open(sorted_paths['updated_gtf'], 'rt') as updated_gtf_handle:
             with open(sorted_paths['diff_transcripts'],
@@ -90,20 +97,23 @@ def process_genes(genes, temp_dir, sorted_paths, other_gene_abundance_totals,
                             updated_gtf_handle, diff_transcripts_handle,
                             gencode_gtf_handle, other_gene_abundance_totals,
                             out_dir, group_1, group_1_name, group_2,
-                            group_2_name, plot_file_type)
+                            group_2_name, plot_file_type,
+                            compare_all_within_gene, summary)
                 else:
                     process_genes_with_handles(
                         genes, temp_dir, abundance_handle, updated_gtf_handle,
                         diff_transcripts_handle, None,
                         other_gene_abundance_totals, out_dir, group_1,
-                        group_1_name, group_2, group_2_name, plot_file_type)
+                        group_1_name, group_2, group_2_name, plot_file_type,
+                        compare_all_within_gene, summary)
 
 
 def process_genes_with_handles(genes, temp_dir, abundance_handle,
                                updated_gtf_handle, diff_transcripts_handle,
                                gencode_gtf_handle, other_gene_abundance_totals,
                                out_dir, group_1, group_1_name, group_2,
-                               group_2_name, plot_file_type):
+                               group_2_name, plot_file_type,
+                               compare_all_within_gene, summary):
     abundance_info = {
         'handle': abundance_handle,
         'next_line': None,
@@ -135,7 +145,8 @@ def process_genes_with_handles(genes, temp_dir, abundance_handle,
                      temp_files_for_gene['updated_gtf'],
                      temp_files_for_gene['gencode_gtf'],
                      temp_files_for_gene['diff_transcripts'], out_dir, group_1,
-                     group_1_name, group_2, group_2_name, plot_file_type)
+                     group_1_name, group_2, group_2_name, plot_file_type,
+                     compare_all_within_gene, summary)
 
 
 def set_header_line_if_possible(info):
@@ -219,7 +230,8 @@ def add_other_gene_totals_to_abundance(other_gene_abundance_totals, out_path):
 
 def process_gene(gene_id, abundance, updated_gtf, gencode_gtf,
                  diff_transcripts, out_dir, group_1, group_1_name, group_2,
-                 group_2_name, plot_file_type):
+                 group_2_name, plot_file_type, compare_all_within_gene,
+                 summary):
     visualize_isoforms(gene_id, abundance, updated_gtf, gencode_gtf,
                        diff_transcripts, out_dir, group_1, group_1_name,
                        group_2, group_2_name, plot_file_type)
@@ -227,15 +239,16 @@ def process_gene(gene_id, abundance, updated_gtf, gencode_gtf,
     significant_transcripts = rmats_long_utils.select_significant_transcripts(
         gene_id, diff_transcripts)
     most_significant = significant_transcripts[0]
+    if compare_all_within_gene:
+        classify_isoforms(gene_id, out_dir, updated_gtf, gencode_gtf,
+                          most_significant, None, summary)
+
+    if len(significant_transcripts) != 2:
+        return
+
+    second_transcript = significant_transcripts[1]
     classify_isoforms(gene_id, out_dir, updated_gtf, gencode_gtf,
-                      most_significant)
-    if gencode_gtf:
-        gene_name, canonical_transcript = (
-            rmats_long_utils.get_gene_name_and_canonical_transcript_from_gtf(
-                gene_id, gencode_gtf))
-        if canonical_transcript:
-            classify_isoforms(gene_id, out_dir, updated_gtf, gencode_gtf,
-                              canonical_transcript)
+                      most_significant, second_transcript, summary)
 
 
 def count_significant_isoforms(out_dir, diff_transcripts, adj_pvalue,
@@ -290,25 +303,38 @@ def visualize_isoforms(gene_id, abundance, updated_gtf, gencode_gtf,
 
 
 def classify_isoforms(gene, out_dir, updated_gtf, gencode_gtf,
-                      main_transcript_id):
+                      main_transcript_id, second_transcript_id, summary):
     python_executable = rmats_long_utils.get_python_executable()
     script_dir = rmats_long_utils.get_script_dir()
     classify_script = os.path.join(script_dir,
                                    'classify_isoform_differences.py')
-    out_tsv = os.path.join(
-        out_dir,
-        '{}_isoform_differences_from_{}.tsv'.format(gene, main_transcript_id))
-    command = [
-        python_executable, classify_script, '--updated-gtf', updated_gtf,
-        '--out-tsv', out_tsv, '--main-transcript-id', main_transcript_id
-    ]
+    if second_transcript_id is None:
+        # comparing to all other isoforms in the gene
+        out_tsv = os.path.join(
+            out_dir, '{}_isoform_differences_from_{}.tsv'.format(
+                gene, main_transcript_id))
+        command = [
+            python_executable, classify_script, '--updated-gtf', updated_gtf,
+            '--out-tsv', out_tsv, '--main-transcript-id', main_transcript_id
+        ]
+    else:
+        out_tsv = os.path.join(
+            out_dir, '{}_isoform_differences_{}_to_{}.tsv'.format(
+                gene, main_transcript_id, second_transcript_id))
+        command = [
+            python_executable, classify_script, '--updated-gtf', updated_gtf,
+            '--out-tsv', out_tsv, '--main-transcript-id', main_transcript_id,
+            '--second-transcript-id', second_transcript_id
+        ]
+
     if gencode_gtf:
         command.extend(['--gencode-gtf', gencode_gtf])
 
     rmats_long_utils.run_command(command)
+    summarize_classification(summary, out_tsv)
 
 
-def get_top_n_genes(diff_transcripts, plot_top_n):
+def get_top_n_genes(diff_transcripts, process_top_n):
     genes_to_sort = dict()
     with open(diff_transcripts, 'rt') as handle:
         for row in rmats_long_utils.row_iterator_for_tsv_with_header(handle):
@@ -333,10 +359,10 @@ def get_top_n_genes(diff_transcripts, plot_top_n):
 
     sorted_genes = sorted(genes_to_sort.keys(),
                           key=lambda gene: genes_to_sort[gene])
-    if plot_top_n < 0:
+    if (process_top_n is None) or (process_top_n < 0):
         return sorted_genes
 
-    return sorted_genes[:plot_top_n]
+    return sorted_genes[:process_top_n]
 
 
 def parse_sorted_gene_line(string):
@@ -453,7 +479,103 @@ def sort_files_by_genes(genes, abundance, updated_gtf, gencode_gtf,
     return sorted_paths
 
 
+def summarize_differential_transcripts(summary, filtered_diff_transcripts_path,
+                                       adj_pvalue, delta_proportion):
+    summary['pvalue_threshold'] = adj_pvalue
+    summary['delta_proportion_threshold'] = delta_proportion
+    sig_genes = set()
+    sig_isoforms = set()
+    with open(filtered_diff_transcripts_path, 'rt') as handle:
+        for row in rmats_long_utils.row_iterator_for_tsv_with_header(handle):
+            sig_genes.add(row['gene_id'])
+            sig_isoforms.add(row['feature_id'])
+
+    summary['significant_genes'] = len(sig_genes)
+    summary['significant_isoforms'] = len(sig_isoforms)
+
+
+def summarize_classification(summary, out_tsv):
+    classifications = summary.get('classifications')
+    if not classifications:
+        classifications = {
+            'total': 0,
+            'SE': 0,
+            'A5SS': 0,
+            'A3SS': 0,
+            'MXE': 0,
+            'RI': 0,
+            'AFE': 0,
+            'ALE': 0,
+            'COMPLEX': 0,
+            'combo': 0,
+            'no_event': 0
+        }
+        summary['classifications'] = classifications
+
+    by_pair = dict()
+    with open(out_tsv, 'rt') as handle:
+        for row in rmats_long_utils.row_iterator_for_tsv_with_header(handle):
+            t_1 = row['transcript1']
+            t_2 = row['transcript2']
+            pair = (t_1, t_2)
+            event = row['event']
+            if pair in by_pair:
+                by_pair[pair] = 'combo'
+            else:
+                by_pair[pair] = event
+
+    if not by_pair:
+        classifications['no_event'] += 1
+        return
+
+    total = len(by_pair)
+    classifications['total'] += total
+    for classification in by_pair.values():
+        classifications[classification] += 1
+
+
+def write_summary(summary, out_dir):
+    summary_path = os.path.join(out_dir, 'summary.txt')
+    with open(summary_path, 'wt') as handle:
+        handle.write('## significant differential transcript usage\n')
+        handle.write('total significant isoforms: {}\n'.format(
+            summary['significant_isoforms']))
+        handle.write('total genes with significant isoforms: {}\n'.format(
+            summary['significant_genes']))
+        handle.write('adjusted pvalue threshold: {}\n'.format(
+            summary['pvalue_threshold']))
+        handle.write('delta isoform proportion threshold: {}\n'.format(
+            summary['delta_proportion_threshold']))
+        classifications = summary.get('classifications')
+        if not classifications:
+            return summary_path
+
+        handle.write(
+            '## alternative splicing classifications between isoform pairs\n')
+        handle.write('total isoform pairs: {}\n'.format(
+            classifications['total']))
+        handle.write('exon skipping: {}\n'.format(classifications['SE']))
+        handle.write("alternative 5'-splice site: {}\n".format(
+            classifications['A5SS']))
+        handle.write("alternative 3'-splice site: {}\n".format(
+            classifications['A3SS']))
+        handle.write('mutually exclusive exons: {}\n'.format(
+            classifications['MXE']))
+        handle.write('intron retention: {}\n'.format(classifications['RI']))
+        handle.write('alternative first exon: {}\n'.format(
+            classifications['AFE']))
+        handle.write('alternative last exon: {}\n'.format(
+            classifications['ALE']))
+        handle.write('complex: {}\n'.format(classifications['COMPLEX']))
+        handle.write('combinatorial: {}\n'.format(classifications['combo']))
+        handle.write('no classification: {}\n'.format(
+            classifications['no_event']))
+
+    return summary_path
+
+
 def rmats_long(args):
+    summary = dict()
     rmats_long_utils.create_output_dir(args.out_dir)
     if args.diff_transcripts:
         count_significant_isoforms(args.out_dir, args.diff_transcripts,
@@ -469,12 +591,14 @@ def rmats_long(args):
 
     filtered_diff_transcripts_path = os.path.join(
         args.out_dir, 'differential_transcripts_filtered.tsv')
+    summarize_differential_transcripts(summary, filtered_diff_transcripts_path,
+                                       args.adj_pvalue, args.delta_proportion)
 
-    if args.plot_top_n == 0:
-        return
+    if (args.process_top_n is not None) and (args.process_top_n == 0):
+        return summary
 
     genes_to_process = get_top_n_genes(filtered_diff_transcripts_path,
-                                       args.plot_top_n)
+                                       args.process_top_n)
     with tempfile.TemporaryDirectory(suffix='_tmp',
                                      prefix='rmats_long_',
                                      dir=args.out_dir) as temp_dir:
@@ -486,13 +610,17 @@ def rmats_long(args):
         process_genes(genes_to_process, temp_dir, sorted_paths,
                       other_gene_abundance_totals, args.out_dir, args.group_1,
                       args.group_1_name, args.group_2, args.group_2_name,
-                      args.plot_file_type)
+                      args.plot_file_type, args.compare_all_within_gene,
+                      summary)
+
+    return summary
 
 
 def main():
     args = parse_args()
-    rmats_long(args)
-    print('finished')
+    summary = rmats_long(args)
+    summary_path = write_summary(summary, args.out_dir)
+    print('\nsummary written to {}'.format(summary_path))
 
 
 if __name__ == '__main__':

@@ -23,6 +23,9 @@ def parse_args():
     parser.add_argument('--out-tsv',
                         required=True,
                         help='The path of the output file')
+    parser.add_argument(
+        '--second-transcript-id',
+        help='If given, only compare the main transcript to this transcript')
 
     return parser.parse_args()
 
@@ -49,11 +52,9 @@ def classify_isoform_differences(args):
     temp_files = dict()
     try:
         temp_files = get_temp_files(args.out_tsv)
-        classify_isoform_differences_with_temp_files(temp_files,
-                                                     args.main_transcript_id,
-                                                     args.updated_gtf,
-                                                     args.gencode_gtf,
-                                                     args.out_tsv)
+        classify_isoform_differences_with_temp_files(
+            temp_files, args.main_transcript_id, args.second_transcript_id,
+            args.updated_gtf, args.gencode_gtf, args.out_tsv)
     finally:
         for temp_file in temp_files.values():
             if os.path.exists(temp_file):
@@ -130,6 +131,7 @@ def write_gtf_lines(file_name, main_lines, other_lines):
 
 def classify_isoform_differences_with_temp_files(temp_files,
                                                  main_transcript_id,
+                                                 second_transcript_id,
                                                  updated_gtf, gencode_gtf,
                                                  out_tsv):
     python = rmats_long_utils.get_python_executable()
@@ -139,6 +141,15 @@ def classify_isoform_differences_with_temp_files(temp_files,
     lines_by_transcript = filter_gtf_to_gene(updated_gtf, gencode_gtf,
                                              main_transcript_id)
     main_transcript_lines = lines_by_transcript[main_transcript_id]
+    if second_transcript_id:
+        second_transcript_lines = lines_by_transcript[second_transcript_id]
+        write_gtf_lines(isoform_gtf, main_transcript_lines,
+                        second_transcript_lines)
+        command = [python, script, '-i', isoform_gtf, '-o', out_tsv]
+        rmats_long_utils.run_command(command)
+        return
+
+    command = [python, script, '-i', isoform_gtf, '-o', isoform_tsv]
     headers = ['transcript1', 'transcript2', 'event', 'coordinates']
     with open(out_tsv, 'wt') as combined_handle:
         rmats_long_utils.write_tsv_line(combined_handle, headers)
@@ -147,7 +158,6 @@ def classify_isoform_differences_with_temp_files(temp_files,
                 continue
 
             write_gtf_lines(isoform_gtf, main_transcript_lines, lines)
-            command = [python, script, '-i', isoform_gtf, '-o', isoform_tsv]
             rmats_long_utils.run_command(command)
             with open(isoform_tsv, 'rt') as single_handle:
                 for line_i, line in enumerate(single_handle):

@@ -1,10 +1,13 @@
-/ENSG00000198561.16_cpm_and_proportion.tsv
-/ENSG00000198561.16_isoform_differences_from_ENST00000358694.10.tsv
-/ENSG00000198561.16_isoform_differences_from_ENST00000399050.10.tsv
+/*_cpm_and_proportion.tsv
+/*_isoform_differences_*_to_*.tsv
+/ENSG00000070882.13_*.png
+/ENSG00000074410.14_*.png
+/ENSG00000198561.16_*.png
 /differential_genes.tsv
 /differential_transcripts.tsv
 /differential_transcripts_filtered.tsv
 /gene_pvalues.png
 /precision_by_gene_expression.png
+/summary.txt
 /transcript_pvalues.png
 /transcripts_per_gene.png

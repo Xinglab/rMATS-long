@@ -46,11 +46,13 @@ usage: rmats_long.py [-h] --abundance ABUNDANCE --updated-gtf UPDATED_GTF
                      [--gencode-gtf GENCODE_GTF] --group-1 GROUP_1 --group-2
                      GROUP_2 [--group-1-name GROUP_1_NAME]
                      [--group-2-name GROUP_2_NAME] --out-dir OUT_DIR
-                     [--num-threads NUM_THREADS] [--plot-top-n PLOT_TOP_N]
+                     [--num-threads NUM_THREADS]
+                     [--process-top-n PROCESS_TOP_N]
                      [--plot-file-type {.pdf,.png}]
                      [--diff-transcripts DIFF_TRANSCRIPTS]
                      [--adj-pvalue ADJ_PVALUE]
                      [--delta-proportion DELTA_PROPORTION]
+                     [--compare-all-within-gene]
 
 Analyze ESPRESSO results and produce plots for significant isoforms
 
@@ -77,10 +79,10 @@ options:
   --out-dir OUT_DIR     The path to use as the output directory
   --num-threads NUM_THREADS
                         The number of threads to use (default 1)
-  --plot-top-n PLOT_TOP_N
-                        Generate plots for the top "n" significant genes. To
-                        plot all significant genes use --plot-top-n -1.
-                        (default 10)
+  --process-top-n PROCESS_TOP_N
+                        Generate plots and classify isoform differences for
+                        the top "n" significant genes. By default all
+                        significant genes are processed
   --plot-file-type {.pdf,.png}
                         The file type for output plots (default .pdf))
   --diff-transcripts DIFF_TRANSCRIPTS
@@ -90,6 +92,12 @@ options:
                         The cutoff for adjusted p-value (default 0.05)
   --delta-proportion DELTA_PROPORTION
                         The cutoff for delta isoform proportion (default 0.1)
+  --compare-all-within-gene
+                        Compare the most significant isoform to all other
+                        isoforms in the gene. By default, the most significant
+                        isoform is only compared to the most significant
+                        isoform with a delta proportion in the opposite
+                        direction.
 ```
 
 ### Detect Differential Isoforms
@@ -243,7 +251,7 @@ options:
 
 ### Classify Isoform Differences
 
-[scripts/classify_isoform_differences.py](scripts/classify_isoform_differences.py) compares the structures of isoforms within a gene by calling [scripts/FindAltTSEvents.py](scripts/FindAltTSEvents.py) multiple times using a "main" isoform and all other isoforms in a gene
+[scripts/classify_isoform_differences.py](scripts/classify_isoform_differences.py) compares the structures of isoforms within a gene by calling [scripts/FindAltTSEvents.py](scripts/FindAltTSEvents.py) with a "main" isoform and a second isoform (or all other isoforms in the gene by default)
 
 [scripts/FindAltTSEvents.py](scripts/FindAltTSEvents.py) compares the structures of any two transcript isoforms. Local differences in transcript structure are classified into 7 basic alternative splicing categories:
 
@@ -274,6 +282,7 @@ usage: classify_isoform_differences.py [-h] --main-transcript-id
                                        MAIN_TRANSCRIPT_ID --updated-gtf
                                        UPDATED_GTF [--gencode-gtf GENCODE_GTF]
                                        --out-tsv OUT_TSV
+                                       [--second-transcript-id SECOND_TRANSCRIPT_ID]
 
 Compare the structures of isoforms within a gene
 
@@ -287,6 +296,9 @@ options:
                         The path to a gencode annotation.gtf file. Can be used
                         to compare against isoforms not detected by ESPRESSO
   --out-tsv OUT_TSV     The path of the output file
+  --second-transcript-id SECOND_TRANSCRIPT_ID
+                        If given, only compare the main transcript to this
+                        transcript
 ```
 
 ```
@@ -328,7 +340,7 @@ The unpacked files are:
 * `example/samples_N2_R0_abundance.esp`
 * `example/samples_N2_R0_updated.gtf`
 
-The example data is based on cell line data from [https://doi.org/10.1126/sciadv.abq5072](https://doi.org/10.1126/sciadv.abq5072). The 1D cDNA sequencing for GS689 and PC3E was processed to get .sam files. The reference data (gencode .gtf and GRCh38 .fa) and the .sam files were filtered to a single region of chr11 (57,500,000-58,000,000) to get a small dataset
+The example data is based on cell line data from [https://doi.org/10.1126/sciadv.abq5072](https://doi.org/10.1126/sciadv.abq5072). The 1D cDNA sequencing for GS689 and PC3E was processed to get .sam files. The reference data (gencode .gtf and GRCh38 .fa) and the .sam files were filtered to a few different regions to get a small dataset
 
 The first step is to run [ESPRESSO](https://github.com/Xinglab/espresso) using the provided reference data and alignment files. The result files from ESPRESSO are included in the example data
 
@@ -352,40 +364,56 @@ python ./scripts/rmats_long.py --abundance ./example/samples_N2_R0_abundance.esp
 python ./scripts/detect_differential_isoforms.py --abundance ./example/samples_N2_R0_abundance.esp --out-dir ./example_out --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --adj-pvalue 0.05 --delta-proportion 0.1 --num-threads 1
 ```
 
-That should print: `found 3 isoforms from 1 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.1`. One significant row from `example_out/differential_transcripts_filtered.tsv` is:
+That should print: `found 8 isoforms from 4 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.1`. One significant row from `example_out/differential_transcripts_filtered.tsv` is:
 ```
 gene_id	feature_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion
-ENSG00000198561.16	ENST00000358694.10	136.52702546919	1	1.53016788937297e-31	5.04955403493079e-30	0.006	0.0035	0.0033	0.3767	0.4791	0.4069	0.0043	0.4209	-0.4166
+ENSG00000204580.14	ENST00000418800.6	18.9554137237444	1	1.33809053186041e-05	4.39658317611276e-05	0.2476	0.3729	0.2562	0.0	0.0	0.0199	0.2922	0.0066	0.2856
 ```
 
 Next [scripts/rmats_long.py](scripts/rmats_long.py) will run a similar command to what is below (but using some temporary files):
 ```
-python ./scripts/visualize_isoforms.py --gene-id ENSG00000198561.16 --abundance ./example/samples_N2_R0_abundance.esp --updated-gtf ./example/samples_N2_R0_updated.gtf --diff-transcripts ./example_out/differential_transcripts.tsv --out-dir ./example_out --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --group-1-name PC3E --group-2-name GS689 --plot-file-type .png --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf
+python ./scripts/visualize_isoforms.py --gene-id ENSG00000204580.14 --abundance ./example/samples_N2_R0_abundance.esp --updated-gtf ./example/samples_N2_R0_updated.gtf --diff-transcripts ./example_out/differential_transcripts.tsv --out-dir ./example_out --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --group-1-name PC3E --group-2-name GS689 --plot-file-type .png --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf
 ```
 
-The `--gene-id` is the significant gene which can be found in `./example_out/differential_transcripts_filtered.tsv`. The command will produce `example_out/ENSG00000198561.16_abundance.png`:
-![CTNND1 abundance](example_out/ENSG00000198561.16_abundance.png)
+The `--gene-id` is the significant gene which can be found in `./example_out/differential_transcripts_filtered.tsv`. The command will produce `example_out/ENSG00000204580.14_abundance.png`:
+![DDR1 abundance](example_out/ENSG00000204580.14_abundance.png)
 
-And `example_out/ENSG00000198561.16_structure.png`
-![CTNND1 structure](example_out/ENSG00000198561.16_structure.png)
+And `example_out/ENSG00000204580.14_structure.png`
+![DDR1 structure](example_out/ENSG00000204580.14_structure.png)
 
-The plots show that ENST00000358694.10 is abundant in GS689 samples and ENST00000529986.5 is abundant in PC3E samples. There are also changes in abundance for other isoforms
+The plots show that ENST00000418800.6 is abundant in PC3E samples but not in GS689 samples. ENST00000376568.8 is the most abundant isoform in GS689 samples.
 
 [scripts/rmats_long.py](scripts/rmats_long.py) will determine the differences among transcripts within that gene in terms of splicing events with:
 ```
-python ./scripts/classify_isoform_differences.py --updated-gtf ./example/samples_N2_R0_updated.gtf --out-tsv ./example_out/ENSG00000198561.16_isoform_differences_from_ENST00000358694.10.tsv --main-transcript-id ENST00000358694.10 --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf
-```
-and
-```
-python ./scripts/classify_isoform_differences.py --updated-gtf ./example/samples_N2_R0_updated.gtf --out-tsv ./example_out/ENSG00000198561.16_isoform_differences_from_ENST00000399050.10.tsv --main-transcript-id ENST00000399050.10 --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf
+python ./scripts/classify_isoform_differences.py --updated-gtf ./example/samples_N2_R0_updated.gtf --out-tsv ./example_out/ENSG00000204580.14_isoform_differences_ENST00000418800.6_to_ENST00000376568.8.tsv --main-transcript-id ENST00000418800.6 --second-transcript-id ENST00000376568.8 --gencode-gtf ./example/gencode.v43.annotation_filtered.gtf
 ```
 
-ENST00000358694.10 is chosen for comparison because it is the most significant isoform for this gene from `./example_out/differential_transcripts.tsv`. ENST00000399050.10 is chosen for comparison because it is the transcript with `tag "Ensembl_canonical"` for this gene in `./example/gencode.v43.annotation_filtered.gtf`
+ENST00000418800.6 is chosen as the main transcript because it is the most significant isoform for this gene from `./example_out/differential_transcripts.tsv`. ENST00000376568.8 is chosen as the second transcript because it is the most significant isoform with a delta proportion in the opposite direction of the main transcript for this gene
 
-From either file it can be seen that those two isoforms differ by an A5SS event and two SE events:
+`./example_out/ENSG00000204580.14_isoform_differences_ENST00000418800.6_to_ENST00000376568.8.tsv` shows that those two isoforms differ by an alternative first exon event and an exon skipping event. This can also be seen in the isoform structure plot:
 ```
 transcript1	transcript2	event	coordinates
-ENST00000399050.10	ENST00000358694.10	A5SS	chr11:57761802:57762046:+;chr11:57761802:57762119:+
-ENST00000399050.10	ENST00000358694.10	SE	chr11:57806461:57806478:+
-ENST00000399050.10	ENST00000358694.10	SE	chr11:57815915:57816001:+
+ENST00000418800.6	ENST00000376568.8	AFE	chr6:30884519:30884710:+;chr6:30882613:30882983:+
+ENST00000418800.6	ENST00000376568.8	SE	chr6:30895404:30895514:+
+```
+
+[scripts/rmats_long.py](scripts/rmats_long.py) also runs similar commands for the 3 other significant genes that were detected. A summary is written to `./example_out/summary.txt`:
+```
+## significant differential transcript usage
+total significant isoforms: 8
+total genes with significant isoforms: 4
+adjusted pvalue threshold: 0.05
+delta isoform proportion threshold: 0.1
+## alternative splicing classifications between isoform pairs
+total isoform pairs: 4
+exon skipping: 1
+alternative 5'-splice site: 0
+alternative 3'-splice site: 0
+mutually exclusive exons: 0
+intron retention: 0
+alternative first exon: 0
+alternative last exon: 0
+complex: 1
+combinatorial: 2
+no classification: 0
 ```
