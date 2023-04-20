@@ -405,7 +405,7 @@ total genes with significant isoforms: 4
 adjusted pvalue threshold: 0.05
 delta isoform proportion threshold: 0.1
 ## alternative splicing classifications between isoform pairs
-total isoform pairs: 4
+total classified isoform pairs: 4
 exon skipping: 1
 alternative 5'-splice site: 0
 alternative 3'-splice site: 0
@@ -415,5 +415,4 @@ alternative first exon: 0
 alternative last exon: 0
 complex: 1
 combinatorial: 2
-no classification: 0
 ```

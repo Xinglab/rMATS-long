@@ -507,8 +507,7 @@ def summarize_classification(summary, out_tsv):
             'AFE': 0,
             'ALE': 0,
             'COMPLEX': 0,
-            'combo': 0,
-            'no_event': 0
+            'combo': 0
         }
         summary['classifications'] = classifications
 
@@ -525,7 +524,6 @@ def summarize_classification(summary, out_tsv):
                 by_pair[pair] = event
 
     if not by_pair:
-        classifications['no_event'] += 1
         return
 
     total = len(by_pair)
@@ -552,7 +550,7 @@ def write_summary(summary, out_dir):
 
         handle.write(
             '## alternative splicing classifications between isoform pairs\n')
-        handle.write('total isoform pairs: {}\n'.format(
+        handle.write('total classified isoform pairs: {}\n'.format(
             classifications['total']))
         handle.write('exon skipping: {}\n'.format(classifications['SE']))
         handle.write("alternative 5'-splice site: {}\n".format(
@@ -568,8 +566,6 @@ def write_summary(summary, out_dir):
             classifications['ALE']))
         handle.write('complex: {}\n'.format(classifications['COMPLEX']))
         handle.write('combinatorial: {}\n'.format(classifications['combo']))
-        handle.write('no classification: {}\n'.format(
-            classifications['no_event']))
 
     return summary_path
 
