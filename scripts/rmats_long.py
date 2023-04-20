@@ -242,6 +242,7 @@ def process_gene(gene_id, abundance, updated_gtf, gencode_gtf,
     if compare_all_within_gene:
         classify_isoforms(gene_id, out_dir, updated_gtf, gencode_gtf,
                           most_significant, None, summary)
+        return
 
     if len(significant_transcripts) != 2:
         return
