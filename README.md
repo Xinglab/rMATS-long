@@ -367,7 +367,7 @@ python ./scripts/detect_differential_isoforms.py --abundance ./example/samples_N
 That should print: `found 8 isoforms from 4 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.1`. One significant row from `example_out/differential_transcripts_filtered.tsv` is:
 ```
 gene_id	feature_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion
-ENSG00000204580.14	ENST00000418800.6	18.9554137237444	1	1.33809053186041e-05	4.39658317611276e-05	0.2476	0.3729	0.2562	0.0	0.0	0.0199	0.2922	0.0066	0.2856
+ENSG00000204580.14	ENST00000418800.6	19.0795950208005	1	1.25378257460589e-05	3.60462490199193e-05	0.2476	0.3807	0.2559	0.0	0.0	0.0203	0.2947	0.0068	0.288
 ```
 
 Next [scripts/rmats_long.py](scripts/rmats_long.py) will run a similar command to what is below (but using some temporary files):
