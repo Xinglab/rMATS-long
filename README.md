@@ -2,7 +2,7 @@
 
 ## About
 
-rMATS-long is a collection of tools for analyzing long-read data
+rMATS-long is an integrated computational workflow for long-read RNA-seq data. Building on our ESPRESSO tool for robust transcript discovery and quantification using long-read RNA-seq data, rMATS-long enables differential isoform analysis between sample groups, as well as classification and visualization of isoform structure and abundance.
 
 ## Table of Contents
 
