@@ -16,12 +16,12 @@ import rmats_long_utils
 
 def transcript_colors():
     return [
-        '#FF5F42',  # light red
-        '#003E7F',  # dark blue
-        '#0068AF',  # medium blue
-        '#5495E1',  # light blue
-        '#A1C2E8',  # lighter blue
-        '#D9D9D9',  # grey
+        '#FF0018',  # bright red
+        '#0072B2',  # blue
+        '#474747',  # dark grey
+        '#8A8A8A',  # grey
+        '#C2C2C2',  # light grey
+        '#E2E2E2',  # lighter grey
     ]
 
 
@@ -31,8 +31,8 @@ MAX_TRANSCRIPTS = len(transcript_colors()) - 1
 
 def group_colors():
     return [
-        "#FF0018",  # bright red
-        "#E68E19",  # orange
+        '#009E73',  # bluishgreen
+        '#E69F00',  # orange
     ]
 
 
