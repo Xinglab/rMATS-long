@@ -1,5 +1,8 @@
 # rMATS-long
 
+[![Latest Release](https://img.shields.io/github/release/Xinglab/rMATS-long.svg?label=Latest%20Release)](https://github.com/Xinglab/rMATS-long/releases/latest)
+[![Total GitHub Downloads](https://img.shields.io/github/downloads/Xinglab/rMATS-long/total.svg?label=Total%20GitHub%20Downloads)](https://github.com/Xinglab/rMATS-long/releases)
+
 ## About
 
 rMATS-long is an integrated computational workflow for long-read RNA-seq data. Building on our ESPRESSO tool for robust transcript discovery and quantification using long-read RNA-seq data, rMATS-long enables differential isoform analysis between sample groups, as well as classification and visualization of isoform structure and abundance.
