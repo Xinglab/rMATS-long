@@ -2,6 +2,7 @@
 
 [![Latest Release](https://img.shields.io/github/release/Xinglab/rMATS-long.svg?label=Latest%20Release)](https://github.com/Xinglab/rMATS-long/releases/latest)
 [![Total GitHub Downloads](https://img.shields.io/github/downloads/Xinglab/rMATS-long/total.svg?label=Total%20GitHub%20Downloads)](https://github.com/Xinglab/rMATS-long/releases)
+[![Total Bioconda Installs](https://img.shields.io/conda/dn/bioconda/rmats-long.svg?label=Total%20Bioconda%20Installs)](https://anaconda.org/bioconda/rmats-long)
 
 ## About
 
@@ -19,6 +20,12 @@ rMATS-long is an integrated computational workflow for long-read RNA-seq data. B
 ## Dependencies
 
 Dependencies can be installed to a conda environment by running [./install](./install). Then the scripts can be run when the conda environment is activated: `conda activate ./conda_env`
+
+Another option is to install the rmats-long bioconda package:
+```
+conda install -c conda-forge -c bioconda rmats-long
+```
+The rMATS-long scripts are included in the bioconda package and will be available in that conda environment at `/path/to/conda_env/rMATS-long/`
 
 * [Python](https://www.python.org/) (v3.10.9)
   + [NetworkX](https://networkx.org/) (v2.8.8)
