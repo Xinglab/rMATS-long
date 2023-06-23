@@ -195,11 +195,19 @@ main <- function() {
                                        data=DRIMSeq::samples(drim_data))
     null_model <- stats::model.matrix(~ 1, data=DRIMSeq::samples(drim_data))
     base::cat('\nAbout to run DRIMSeq::dmPrecision(...) which could take a while...\n')
+    ## From the DRIMSeq documentation:
+    ## add_uniform: Whether to add a small fractional count to zeros, (adding
+    ##           a uniform random variable between 0 and 0.1). This option
+    ##           allows for the fitting of genewise precision and coefficients
+    ##           for genes with two features having all zero for one group, or
+    ##           the last feature having all zero for one group.
     drim_data <- DRIMSeq::dmPrecision(drim_data, design=design_full,
+                                      add_uniform=TRUE,
                                       BPPARAM=bpparam)
     plot_precision(drim_data, out_dir_path)
 
     drim_data <- DRIMSeq::dmFit(drim_data, design=design_full,
+                                add_uniform=TRUE,
                                 BPPARAM=bpparam)
     drim_data <- DRIMSeq::dmTest(drim_data, design=null_model,
                                  BPPARAM=bpparam)
