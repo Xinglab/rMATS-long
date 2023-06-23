@@ -103,6 +103,27 @@ make_counts_data_frame <- function(abundance) {
     return(df)
 }
 
+## DRIMSeq behavior depends on the order of transcript IDs within a gene.
+## If the last transcript ID for a gene has no counts for either sample group,
+## then DRIMSeq will give NA results for that gene.
+## Sort so that transcript IDs that have counts for both sample groups are last.
+sort_counts_df <- function(counts_df, sample_df) {
+    groups <- base::unique(sample_df$group)
+    groups <- base::sort(groups)
+    sort_columns <- list(gene_id=counts_df$gene_id)
+    for (group in groups) {
+        samples <- sample_df$sample_id[sample_df$group == group]
+        group_sums <- base::rowSums(counts_df[, samples])
+        sort_columns[[group]] <- group_sums > 0
+    }
+    sort_columns$feature_id <- counts_df$feature_id
+    ## sort by: gene_id, has_counts_group_1, has_counts_group_2, transcript_ID
+    sort_order <- base::order(sort_columns[[1]], sort_columns[[2]],
+                              sort_columns[[3]], sort_columns[[4]])
+    sorted_counts_df <- counts_df[sort_order, ]
+    return(sorted_counts_df)
+}
+
 ## From the vignette:
 ## [the default params give] a very relaxed filtering, where transcripts with
 ## zero expression in all the samples and genes with only one transcript
@@ -164,7 +185,8 @@ main <- function() {
                                               group_1_file_path,
                                               group_2_file_path)
     counts_df <- make_counts_data_frame(abundance)
-    drim_data <- DRIMSeq::dmDSdata(counts_df, sample_df)
+    sorted_counts_df <- sort_counts_df(counts_df, sample_df)
+    drim_data <- DRIMSeq::dmDSdata(sorted_counts_df, sample_df)
     drim_data <- filter_data(drim_data, sample_df)
     plot_transcripts_per_gene(drim_data, out_dir_path)
 
