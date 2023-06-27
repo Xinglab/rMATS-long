@@ -113,7 +113,10 @@ sort_counts_df <- function(counts_df, sample_df) {
     sort_columns <- list(gene_id=counts_df$gene_id)
     for (group in groups) {
         samples <- sample_df$sample_id[sample_df$group == group]
-        group_sums <- base::rowSums(counts_df[, samples])
+        group_sums <- counts_df[, samples]
+        if (base::length(samples) > 1) {
+            group_sums <- base::rowSums(group_sums)
+        }
         sort_columns[[group]] <- group_sums > 0
     }
     sort_columns$feature_id <- counts_df$feature_id
@@ -128,8 +131,24 @@ sort_counts_df <- function(counts_df, sample_df) {
 ## [the default params give] a very relaxed filtering, where transcripts with
 ## zero expression in all the samples and genes with only one transcript
 ## remain[ing] are removed.
+##
+## Then from the documentation for dmFilter:
+## 'min_samps_feature_expr' and 'min_samps_feature_prop'
+## defines the minimal number of samples where features are required
+## to be expressed at the minimal levels of counts 'min_feature_expr'
+## or proportions 'min_feature_prop'. In differential transcript/exon
+## usage analysis, we suggest using 'min_samps_feature_expr' and
+## 'min_samps_feature_prop' equal to the minimal number of replicates
+## in any of the conditions.
 filter_data <- function(drim_data, sample_df) {
-    return(DRIMSeq::dmFilter(drim_data))
+    groups <- base::unique(sample_df$group)
+    samples_per_group <- base::sapply(groups, function(group) {
+        return(base::sum(sample_df$group == group))
+    })
+    min_samples_per_group <- base::min(samples_per_group)
+    return(DRIMSeq::dmFilter(drim_data,
+                             min_samps_feature_expr=min_samples_per_group,
+                             min_feature_expr=1))
 }
 
 plot_transcripts_per_gene <- function(drim_data, out_dir_path) {
