@@ -220,8 +220,22 @@ main <- function() {
     ##           allows for the fitting of genewise precision and coefficients
     ##           for genes with two features having all zero for one group, or
     ##           the last feature having all zero for one group.
+    ##
+    ## prec_moderation: Precision moderation method. One can choose to shrink
+    ##      the precision estimates toward the common precision
+    ##      ("common") or toward the (precision versus mean expression)
+    ##      trend ("trended")
+    ##
+    ## If there are only 2 samples then both 'trended' (the default) and 'common'
+    ## result in an error. prec_moderation='none' avoids the error.
+    if (base::nrow(sample_df) == 2) {
+       prec_moderation='none'
+    } else {
+        prec_moderation='trended'
+    }
     drim_data <- DRIMSeq::dmPrecision(drim_data, design=design_full,
                                       add_uniform=TRUE,
+                                      prec_moderation=prec_moderation,
                                       BPPARAM=bpparam)
     plot_precision(drim_data, out_dir_path)
 
