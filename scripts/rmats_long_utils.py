@@ -113,8 +113,9 @@ def get_gene_name_and_canonical_transcript_from_gtf(gene_id, gtf_path):
             if parsed is None:
                 continue
 
-            found_gene = parsed['attributes'].get('gene_id')
-            if found_gene != gene_id:
+            found_gene_str = parsed['attributes'].get('gene_id')
+            found_genes = found_gene_str.split(',')
+            if gene_id not in found_genes:
                 continue
 
             current_gene_name = parsed['attributes'].get('gene_name')
@@ -205,9 +206,10 @@ def parse_abundance_file(abundance_path):
                 continue
 
             row = dict(zip(in_headers, in_columns))
-            gene = row['gene_ID']
+            gene_str = row['gene_ID']
+            genes = gene_str.split(',')
             transcript = row['transcript_ID']
-            if gene == 'NA':
+            if genes == ['NA']:
                 # Only update the total read count for each sample
                 for sample in sample_names:
                     count = parse_float(row[sample])
@@ -216,30 +218,33 @@ def parse_abundance_file(abundance_path):
 
                 continue
 
-            gene_total_by_sample = total_by_gene_by_sample.get(gene)
-            if not gene_total_by_sample:
-                gene_total_by_sample = dict()
-                total_by_gene_by_sample[gene] = gene_total_by_sample
+            for gene in genes:
+                gene_total_by_sample = total_by_gene_by_sample.get(gene)
+                if not gene_total_by_sample:
+                    gene_total_by_sample = dict()
+                    total_by_gene_by_sample[gene] = gene_total_by_sample
 
-            counts_by_transcript_by_sample = counts_by_gene_by_transcript_by_sample.get(
-                gene)
-            if not counts_by_transcript_by_sample:
-                counts_by_transcript_by_sample = dict()
-                counts_by_gene_by_transcript_by_sample[gene] = (
-                    counts_by_transcript_by_sample)
+                counts_by_transcript_by_sample = counts_by_gene_by_transcript_by_sample.get(
+                    gene)
+                if not counts_by_transcript_by_sample:
+                    counts_by_transcript_by_sample = dict()
+                    counts_by_gene_by_transcript_by_sample[gene] = (
+                        counts_by_transcript_by_sample)
 
-            counts_by_sample = counts_by_transcript_by_sample.get(transcript)
-            if not counts_by_sample:
-                counts_by_sample = dict()
-                counts_by_transcript_by_sample[transcript] = counts_by_sample
+                counts_by_sample = counts_by_transcript_by_sample.get(
+                    transcript)
+                if not counts_by_sample:
+                    counts_by_sample = dict()
+                    counts_by_transcript_by_sample[transcript] = (
+                        counts_by_sample)
 
-            for sample in sample_names:
-                count = parse_float(row[sample])
-                old_total = total_by_sample.get(sample, 0)
-                total_by_sample[sample] = old_total + count
-                old_gene_total = gene_total_by_sample.get(sample, 0)
-                gene_total_by_sample[sample] = old_gene_total + count
-                counts_by_sample[sample] = count
+                for sample in sample_names:
+                    count = parse_float(row[sample])
+                    old_total = total_by_sample.get(sample, 0)
+                    total_by_sample[sample] = old_total + count
+                    old_gene_total = gene_total_by_sample.get(sample, 0)
+                    gene_total_by_sample[sample] = old_gene_total + count
+                    counts_by_sample[sample] = count
 
     return {
         'counts_by_gene_by_transcript_by_sample':

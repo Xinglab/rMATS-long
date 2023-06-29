@@ -375,7 +375,7 @@ def parse_sorted_gene_line(string):
     return without_quotes, line
 
 
-def sort_file_by_genes(genes, orig_path, sorted_path, get_gene_from_line):
+def sort_file_by_genes(genes, orig_path, sorted_path, get_genes_from_line):
     # header and comment lines will be put under None in lines_by_gene
     lines_by_gene = {None: list()}
     for gene in genes:
@@ -383,9 +383,10 @@ def sort_file_by_genes(genes, orig_path, sorted_path, get_gene_from_line):
 
     with open(orig_path, 'rt') as in_handle:
         for line_i, line in enumerate(in_handle):
-            gene_for_line = get_gene_from_line(line_i, line)
-            if gene_for_line in lines_by_gene:
-                lines_by_gene[gene_for_line].append(line)
+            genes_for_line = get_genes_from_line(line_i, line)
+            for gene_for_line in genes_for_line:
+                if gene_for_line in lines_by_gene:
+                    lines_by_gene[gene_for_line].append(line)
 
     with open(sorted_path, 'wt') as out_handle:
         # write header and comment lines first
@@ -402,29 +403,33 @@ def sort_file_by_genes(genes, orig_path, sorted_path, get_gene_from_line):
                 out_handle.write(line)
 
 
-def get_gene_from_line_gtf(line_i, line):
+def get_genes_from_line_gtf(line_i, line):
     parsed = rmats_long_utils.parse_gtf_line(line)
     if parsed is None:
-        return None
+        return [None]
 
-    gene_id = parsed['attributes'].get('gene_id')
-    return gene_id
+    gene_id_str = parsed['attributes'].get('gene_id')
+    gene_ids = gene_id_str.split(',')
+    return gene_ids
 
 
-def get_gene_from_line_abundance(line_i, line):
+def get_genes_from_line_abundance(line_i, line):
     if line_i == 0:
-        return None
+        return [None]
 
     columns = line.rstrip('\n').split('\t')
-    return columns[2]
+    gene_id_str = columns[2]
+    gene_ids = gene_id_str.split(',')
+    return gene_ids
 
 
-def get_gene_from_line_diff_transcripts(line_i, line):
+def get_genes_from_line_diff_transcripts(line_i, line):
     if line_i == 0:
-        return None
+        return [None]
 
     columns = line.rstrip('\n').split('\t')
-    return columns[0]
+    gene_id = columns[0]
+    return [gene_id]
 
 
 # The abundance file will be filtered down to each gene when running
@@ -460,22 +465,22 @@ def sort_files_by_genes(genes, abundance, updated_gtf, gencode_gtf,
     sorted_abundance = os.path.join(temp_dir, 'abundance.esp')
     sorted_paths['abundance'] = sorted_abundance
     sort_file_by_genes(genes, abundance, sorted_abundance,
-                       get_gene_from_line_abundance)
+                       get_genes_from_line_abundance)
 
     sorted_updated_gtf = os.path.join(temp_dir, 'updated.gtf')
     sorted_paths['updated_gtf'] = sorted_updated_gtf
     sort_file_by_genes(genes, updated_gtf, sorted_updated_gtf,
-                       get_gene_from_line_gtf)
+                       get_genes_from_line_gtf)
 
     sorted_diff_transcripts = os.path.join(temp_dir, 'diff_transcripts.tsv')
     sorted_paths['diff_transcripts'] = sorted_diff_transcripts
     sort_file_by_genes(genes, diff_transcripts, sorted_diff_transcripts,
-                       get_gene_from_line_diff_transcripts)
+                       get_genes_from_line_diff_transcripts)
     if gencode_gtf:
         sorted_gencode_gtf = os.path.join(temp_dir, 'gencode.gtf')
         sorted_paths['gencode_gtf'] = sorted_gencode_gtf
         sort_file_by_genes(genes, gencode_gtf, sorted_gencode_gtf,
-                           get_gene_from_line_gtf)
+                           get_genes_from_line_gtf)
 
     return sorted_paths
 
