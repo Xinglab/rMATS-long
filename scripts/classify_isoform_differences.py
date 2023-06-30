@@ -76,10 +76,11 @@ def filter_gtf_to_gene(updated_gtf, gencode_gtf, main_transcript_id):
         raise Exception(
             'Unable to find gene_id for {}'.format(main_transcript_id))
 
-    lines_by_transcript = get_gtf_lines_by_transcript(updated_gtf, gene_id)
+    gene_ids = gene_id.split(',')
+    lines_by_transcript = get_gtf_lines_by_transcript(updated_gtf, gene_ids)
     if gencode_gtf:
         gencode_lines_by_transcript = get_gtf_lines_by_transcript(
-            gencode_gtf, gene_id)
+            gencode_gtf, gene_ids)
         for transcript, lines in gencode_lines_by_transcript.items():
             if transcript not in lines_by_transcript:
                 lines_by_transcript[transcript] = lines
@@ -102,7 +103,7 @@ def find_gene_id_from_gtf(transcript_id, gtf_path):
     return None
 
 
-def get_gtf_lines_by_transcript(gtf_path, gene_id):
+def get_gtf_lines_by_transcript(gtf_path, gene_ids):
     lines_by_transcript = dict()
     with open(gtf_path, 'rt') as gtf_handle:
         for line in gtf_handle:
@@ -110,9 +111,11 @@ def get_gtf_lines_by_transcript(gtf_path, gene_id):
             if not parsed:
                 continue
 
-            line_gene_id = parsed['attributes'].get('gene_id')
+            line_gene_id_str = parsed['attributes'].get('gene_id')
+            line_gene_ids = line_gene_id_str.split(',')
             transcript_id = parsed['attributes'].get('transcript_id')
-            if transcript_id and line_gene_id == gene_id:
+            matched_genes = set(line_gene_ids).intersection(set(gene_ids))
+            if transcript_id and matched_genes:
                 transcript_lines = lines_by_transcript.get(transcript_id)
                 if not transcript_lines:
                     transcript_lines = list()
