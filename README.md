@@ -374,10 +374,10 @@ python ./scripts/rmats_long.py --abundance ./example/samples_N2_R0_abundance.esp
 python ./scripts/detect_differential_isoforms.py --abundance ./example/samples_N2_R0_abundance.esp --out-dir ./example_out --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --adj-pvalue 0.05 --delta-proportion 0.1 --num-threads 1
 ```
 
-That should print: `found 8 isoforms from 4 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.1`. One significant row from `example_out/differential_transcripts_filtered.tsv` is:
+That should print: `found 9 isoforms from 4 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.1`. One significant row from `example_out/differential_transcripts_filtered.tsv` is:
 ```
 gene_id	feature_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion
-ENSG00000204580.14	ENST00000418800.6	19.0795950208005	1	1.25378257460589e-05	3.60462490199193e-05	0.2476	0.3807	0.2559	0.0	0.0	0.0203	0.2947	0.0068	0.288
+ENSG00000204580.14	ENST00000418800.6	21.3599361248612	1	3.80642848651724e-06	1.27857268029356e-05	0.2476	0.3807	0.2559	0.0	0.0	0.0203	0.2947	0.0068	0.288
 ```
 
 Next [scripts/rmats_long.py](scripts/rmats_long.py) will run a similar command to what is below (but using some temporary files):
@@ -410,7 +410,7 @@ ENST00000418800.6	ENST00000376568.8	SE	chr6:30895404:30895514:+
 [scripts/rmats_long.py](scripts/rmats_long.py) also runs similar commands for the 3 other significant genes that were detected. A summary is written to `./example_out/summary.txt`:
 ```
 ## significant differential transcript usage
-total significant isoforms: 8
+total significant isoforms: 9
 total genes with significant isoforms: 4
 adjusted pvalue threshold: 0.05
 delta isoform proportion threshold: 0.1
