@@ -36,6 +36,9 @@ def parse_args():
         type=float,
         default=0.05,
         help='The cutoff for adjusted p-value (default: %(default)s)')
+    parser.add_argument('--use-unadjusted-pvalue',
+                        action='store_true',
+                        help='Use pvalue instead of adj_pvalue for the cutoff')
     parser.add_argument(
         '--delta-proportion',
         type=float,
@@ -105,7 +108,8 @@ def calculate_isoform_proportion(script_dir, out_dir, abundance_path,
 
 
 def count_significant_isoforms(script_dir, out_dir, python_executable,
-                               adj_pvalue, delta_proportion):
+                               adj_pvalue, use_unadjusted_pvalue,
+                               delta_proportion):
     count_script_path = os.path.join(script_dir,
                                      'count_significant_isoforms.py')
     diff_transcripts = os.path.join(out_dir, 'differential_transcripts.tsv')
@@ -117,6 +121,9 @@ def count_significant_isoforms(script_dir, out_dir, python_executable,
         str(adj_pvalue), '--delta-proportion',
         str(delta_proportion)
     ]
+    if use_unadjusted_pvalue:
+        command.append('--use-unadjusted-pvalue')
+
     rmats_long_utils.run_command(command)
 
 
@@ -130,7 +137,8 @@ def detect_differential_isoforms(args):
     calculate_isoform_proportion(script_dir, args.out_dir, args.abundance,
                                  args.group_1, args.group_2, python_executable)
     count_significant_isoforms(script_dir, args.out_dir, python_executable,
-                               args.adj_pvalue, args.delta_proportion)
+                               args.adj_pvalue, args.use_unadjusted_pvalue,
+                               args.delta_proportion)
 
 
 def main():

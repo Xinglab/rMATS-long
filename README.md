@@ -60,7 +60,7 @@ usage: rmats_long.py [-h] --abundance ABUNDANCE --updated-gtf UPDATED_GTF
                      [--process-top-n PROCESS_TOP_N]
                      [--plot-file-type {.pdf,.png}]
                      [--diff-transcripts DIFF_TRANSCRIPTS]
-                     [--adj-pvalue ADJ_PVALUE]
+                     [--adj-pvalue ADJ_PVALUE] [--use-unadjusted-pvalue]
                      [--delta-proportion DELTA_PROPORTION]
                      [--compare-all-within-gene]
 
@@ -100,6 +100,8 @@ options:
                         given then skip the differential isoform calculation.
   --adj-pvalue ADJ_PVALUE
                         The cutoff for adjusted p-value (default 0.05)
+  --use-unadjusted-pvalue
+                        Use pvalue instead of adj_pvalue for the cutoff
   --delta-proportion DELTA_PROPORTION
                         The cutoff for delta isoform proportion (default 0.1)
   --compare-all-within-gene
@@ -144,6 +146,7 @@ usage: detect_differential_isoforms.py [-h] --abundance ABUNDANCE --out-dir
                                        OUT_DIR --group-1 GROUP_1 --group-2
                                        GROUP_2 [--num-threads NUM_THREADS]
                                        [--adj-pvalue ADJ_PVALUE]
+                                       [--use-unadjusted-pvalue]
                                        [--delta-proportion DELTA_PROPORTION]
 
 Detect differential isoform expression using DRIMSeq
@@ -163,6 +166,8 @@ options:
                         The number of threads to use (default: 1)
   --adj-pvalue ADJ_PVALUE
                         The cutoff for adjusted p-value (default: 0.05)
+  --use-unadjusted-pvalue
+                        Use pvalue instead of adj_pvalue for the cutoff
   --delta-proportion DELTA_PROPORTION
                         The cutoff for delta isoform proportion (default: 0.1)
 ```
@@ -173,6 +178,7 @@ python count_significant_isoforms.py -h
 usage: count_significant_isoforms.py [-h] --diff-transcripts DIFF_TRANSCRIPTS
                                      --out-tsv OUT_TSV
                                      [--adj-pvalue ADJ_PVALUE]
+                                     [--use-unadjusted-pvalue]
                                      [--delta-proportion DELTA_PROPORTION]
 
 Count isoforms that meet the cutoff values
@@ -185,6 +191,8 @@ options:
                         values
   --adj-pvalue ADJ_PVALUE
                         The cutoff for adjusted p-value (default: 0.05)
+  --use-unadjusted-pvalue
+                        Use pvalue instead of adj_pvalue for the cutoff
   --delta-proportion DELTA_PROPORTION
                         The cutoff for delta isoform proportion (default: 0.1)
 ```
