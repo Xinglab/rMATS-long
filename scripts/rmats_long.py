@@ -66,6 +66,9 @@ def parse_args():
         type=float,
         default=0.05,
         help='The cutoff for adjusted p-value (default %(default)s)')
+    parser.add_argument('--use-unadjusted-pvalue',
+                        action='store_true',
+                        help='Use pvalue instead of adj_pvalue for the cutoff')
     parser.add_argument(
         '--delta-proportion',
         type=float,
@@ -253,7 +256,7 @@ def process_gene(gene_id, abundance, updated_gtf, gencode_gtf,
 
 
 def count_significant_isoforms(out_dir, diff_transcripts, adj_pvalue,
-                               delta_proportion):
+                               use_unadjusted_pvalue, delta_proportion):
     python_executable = rmats_long_utils.get_python_executable()
     script_dir = rmats_long_utils.get_script_dir()
     count_script = os.path.join(script_dir, 'count_significant_isoforms.py')
@@ -264,11 +267,15 @@ def count_significant_isoforms(out_dir, diff_transcripts, adj_pvalue,
         str(adj_pvalue), '--delta-proportion',
         str(delta_proportion)
     ]
+    if use_unadjusted_pvalue:
+        command.append('--use-unadjusted-pvalue')
+
     rmats_long_utils.run_command(command)
 
 
 def detect_differential_isoforms(abundance, out_dir, group_1, group_2,
-                                 adj_pvalue, delta_proportion, num_threads):
+                                 adj_pvalue, use_unadjusted_pvalue,
+                                 delta_proportion, num_threads):
     python_executable = rmats_long_utils.get_python_executable()
     script_dir = rmats_long_utils.get_script_dir()
     detect_script = os.path.join(script_dir, 'detect_differential_isoforms.py')
@@ -280,6 +287,9 @@ def detect_differential_isoforms(abundance, out_dir, group_1, group_2,
         str(delta_proportion), '--num-threads',
         str(num_threads)
     ]
+    if use_unadjusted_pvalue:
+        command.append('--use-unadjusted-pvalue')
+
     rmats_long_utils.run_command(command)
 
 
@@ -335,11 +345,15 @@ def classify_isoforms(gene, out_dir, updated_gtf, gencode_gtf,
     summarize_classification(summary, out_tsv)
 
 
-def get_top_n_genes(diff_transcripts, process_top_n):
+def get_top_n_genes(diff_transcripts, process_top_n, use_unadjusted_pvalue):
     genes_to_sort = dict()
     with open(diff_transcripts, 'rt') as handle:
         for row in rmats_long_utils.row_iterator_for_tsv_with_header(handle):
-            pvalue = rmats_long_utils.parse_float(row['adj_pvalue'])
+            if use_unadjusted_pvalue:
+                pvalue = rmats_long_utils.parse_float(row['pvalue'])
+            else:
+                pvalue = rmats_long_utils.parse_float(row['adj_pvalue'])
+
             if math.isnan(pvalue):
                 pvalue = 2  # to be last in sort
 
@@ -538,7 +552,7 @@ def summarize_classification(summary, out_tsv):
         classifications[classification] += 1
 
 
-def write_summary(summary, out_dir):
+def write_summary(summary, out_dir, use_unadjusted_pvalue):
     summary_path = os.path.join(out_dir, 'summary.txt')
     with open(summary_path, 'wt') as handle:
         handle.write('## significant differential transcript usage\n')
@@ -546,8 +560,14 @@ def write_summary(summary, out_dir):
             summary['significant_isoforms']))
         handle.write('total genes with significant isoforms: {}\n'.format(
             summary['significant_genes']))
-        handle.write('adjusted pvalue threshold: {}\n'.format(
-            summary['pvalue_threshold']))
+
+        pvalue_line = 'pvalue threshold: {}\n'.format(
+            summary['pvalue_threshold'])
+        if not use_unadjusted_pvalue:
+            pvalue_line = 'adjusted {}'.format(pvalue_line)
+
+        handle.write(pvalue_line)
+
         handle.write('delta isoform proportion threshold: {}\n'.format(
             summary['delta_proportion_threshold']))
         classifications = summary.get('classifications')
@@ -581,13 +601,15 @@ def rmats_long(args):
     rmats_long_utils.create_output_dir(args.out_dir)
     if args.diff_transcripts:
         count_significant_isoforms(args.out_dir, args.diff_transcripts,
-                                   args.adj_pvalue, args.delta_proportion)
+                                   args.adj_pvalue, args.use_unadjusted_pvalue,
+                                   args.delta_proportion)
         diff_transcripts_path = args.diff_transcripts
     else:
         detect_differential_isoforms(args.abundance, args.out_dir,
                                      args.group_1, args.group_2,
-                                     args.adj_pvalue, args.delta_proportion,
-                                     args.num_threads)
+                                     args.adj_pvalue,
+                                     args.use_unadjusted_pvalue,
+                                     args.delta_proportion, args.num_threads)
         diff_transcripts_path = os.path.join(args.out_dir,
                                              'differential_transcripts.tsv')
 
@@ -600,7 +622,8 @@ def rmats_long(args):
         return summary
 
     genes_to_process = get_top_n_genes(filtered_diff_transcripts_path,
-                                       args.process_top_n)
+                                       args.process_top_n,
+                                       args.use_unadjusted_pvalue)
     with tempfile.TemporaryDirectory(suffix='_tmp',
                                      prefix='rmats_long_',
                                      dir=args.out_dir) as temp_dir:
@@ -621,7 +644,8 @@ def rmats_long(args):
 def main():
     args = parse_args()
     summary = rmats_long(args)
-    summary_path = write_summary(summary, args.out_dir)
+    summary_path = write_summary(summary, args.out_dir,
+                                 args.use_unadjusted_pvalue)
     print('\nsummary written to {}'.format(summary_path))
 
 

@@ -19,6 +19,9 @@ def parse_args():
         type=float,
         default=0.05,
         help='The cutoff for adjusted p-value (default: %(default)s)')
+    parser.add_argument('--use-unadjusted-pvalue',
+                        action='store_true',
+                        help='Use pvalue instead of adj_pvalue for the cutoff')
     parser.add_argument(
         '--delta-proportion',
         type=float,
@@ -29,19 +32,24 @@ def parse_args():
 
 
 def count_significant_isoforms(transcript_path, out_path, adj_pvalue,
-                               delta_proportion):
+                               use_unadjusted_pvalue, delta_proportion):
     with open(transcript_path, 'rt') as in_handle:
         with open(out_path, 'wt') as out_handle:
             count_significant_isoforms_with_handles(in_handle, out_handle,
                                                     adj_pvalue,
+                                                    use_unadjusted_pvalue,
                                                     delta_proportion)
 
 
 def count_significant_isoforms_with_handles(in_handle, out_handle, adj_pvalue,
+                                            use_unadjusted_pvalue,
                                             delta_proportion):
     genes = set()
     isoform_count = 0
     pvalue_col_name = 'adj_pvalue'
+    if use_unadjusted_pvalue:
+        pvalue_col_name = 'pvalue'
+
     delta_prop_col_name = 'delta_isoform_proportion'
     for line_i, line in enumerate(in_handle):
         columns = line.rstrip('\n').split('\t')
@@ -74,7 +82,8 @@ def count_significant_isoforms_with_handles(in_handle, out_handle, adj_pvalue,
 def main():
     args = parse_args()
     count_significant_isoforms(args.diff_transcripts, args.out_tsv,
-                               args.adj_pvalue, args.delta_proportion)
+                               args.adj_pvalue, args.use_unadjusted_pvalue,
+                               args.delta_proportion)
 
 
 if __name__ == '__main__':
