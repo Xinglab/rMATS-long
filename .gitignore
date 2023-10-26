@@ -1,2 +1,4 @@
 /conda_env/
 __pycache__/
+/shiny/data/
+/shiny/output/

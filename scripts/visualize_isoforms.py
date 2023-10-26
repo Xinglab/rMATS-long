@@ -2,6 +2,7 @@
 import argparse
 import os
 import os.path
+import stat
 import sys
 
 import matplotlib
@@ -12,6 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import rmats_long_utils
+
+FORCE_775 = False  # workaround for a filesystem issue
 
 
 def transcript_colors():
@@ -67,7 +70,7 @@ def parse_args():
                         help='The path to use as the output directory')
     parser.add_argument(
         '--plot-file-type',
-        choices=['.pdf', '.png'],
+        choices=['.pdf', '.png', 'all'],
         default='.pdf',
         help='The file type for output plots (default %(default)s))')
     parser.add_argument(
@@ -256,8 +259,12 @@ def calc_proportion_and_cpm(abundance_path, gene_id, main_transcript_ids,
                 ]
                 rmats_long_utils.write_tsv_line(out_handle, out_columns)
 
+    if FORCE_775:
+        mode_775 = stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH
+        os.chmod(cpm_and_proportion_path, mode_775)
 
-def plot_abundance(out_path, cpm_and_proportion_path, max_transcripts):
+
+def plot_abundance(out_paths, cpm_and_proportion_path, max_transcripts):
     py_script_rel_path = sys.argv[0]
     py_script_abs_path = os.path.abspath(py_script_rel_path)
     script_dir = os.path.dirname(py_script_abs_path)
@@ -266,9 +273,9 @@ def plot_abundance(out_path, cpm_and_proportion_path, max_transcripts):
     group_colors_string = ','.join(group_colors())
     command = [
         'Rscript', r_script_path, cpm_and_proportion_path,
-        str(max_transcripts), transcript_colors_string, group_colors_string,
-        out_path
+        str(max_transcripts), transcript_colors_string, group_colors_string
     ]
+    command.extend(out_paths)
     rmats_long_utils.run_command(command)
 
 
@@ -525,7 +532,7 @@ def apply_intron_scaling(plot_coords_by_transcript, intron_scaling,
     return region_length - num_removed_units
 
 
-def plot_structure(out_path, proportion_path, gtf_path, gencode_gtf_path,
+def plot_structure(out_paths, proportion_path, gtf_path, gencode_gtf_path,
                    gene_name, main_transcript_ids, max_transcripts,
                    intron_scaling):
     colors = transcript_colors()
@@ -589,7 +596,15 @@ def plot_structure(out_path, proportion_path, gtf_path, gencode_gtf_path,
     plt.axis('off')
     # Let the plot take up the whole figure.
     plt.subplots_adjust(left=0, right=1, bottom=0, top=1, wspace=0, hspace=0)
-    plt.savefig(out_path, dpi=300, pad_inches=0)
+    for out_path in out_paths:
+        if FORCE_775:
+            with open(out_path, 'wt') as h:
+                pass  # create file
+
+            mode_775 = stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH
+            os.chmod(out_path, mode_775)
+
+        plt.savefig(out_path, dpi=300, pad_inches=0)
 
 
 def determine_main_transcripts_and_gene_name(gene_id, orig_gene_name,
@@ -632,19 +647,28 @@ def visualize_isoforms(args):
 
     cpm_and_proportion_file = os.path.join(
         args.out_dir, '{}_cpm_and_proportion.tsv'.format(args.gene_id))
-    abundance_plot_file = os.path.join(
-        args.out_dir, '{}_abundance{}'.format(args.gene_id,
-                                              args.plot_file_type))
-    structure_plot_file = os.path.join(
-        args.out_dir, '{}_structure{}'.format(args.gene_id,
-                                              args.plot_file_type))
+    abundance_plot_file_base = os.path.join(
+        args.out_dir, '{}_abundance'.format(args.gene_id))
+    structure_plot_file_base = os.path.join(
+        args.out_dir, '{}_structure'.format(args.gene_id))
+    plot_file_types = [args.plot_file_type]
+    if args.plot_file_type == 'all':
+        plot_file_types = ['.pdf', '.png']
+
+    abundance_plot_files = list()
+    structure_plot_files = list()
+    for plot_file_type in plot_file_types:
+        abundance_plot_files.append('{}{}'.format(abundance_plot_file_base,
+                                                  plot_file_type))
+        structure_plot_files.append('{}{}'.format(structure_plot_file_base,
+                                                  plot_file_type))
 
     calc_proportion_and_cpm(args.abundance, args.gene_id, main_transcript_ids,
                             args.group_1, args.group_2, args.group_1_name,
                             args.group_2_name, cpm_and_proportion_file)
-    plot_abundance(abundance_plot_file, cpm_and_proportion_file,
+    plot_abundance(abundance_plot_files, cpm_and_proportion_file,
                    args.max_transcripts)
-    plot_structure(structure_plot_file, cpm_and_proportion_file,
+    plot_structure(structure_plot_files, cpm_and_proportion_file,
                    args.updated_gtf, args.gencode_gtf, gene_name,
                    main_transcript_ids, args.max_transcripts,
                    args.intron_scaling)
