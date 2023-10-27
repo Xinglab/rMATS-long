@@ -54,7 +54,7 @@ def parse_args():
               ' genes are processed'))
     parser.add_argument(
         '--plot-file-type',
-        choices=['.pdf', '.png'],
+        choices=['.pdf', '.png', 'all'],
         default='.pdf',
         help='The file type for output plots (default %(default)s))')
     parser.add_argument(

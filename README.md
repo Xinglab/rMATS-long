@@ -58,7 +58,7 @@ usage: rmats_long.py [-h] --abundance ABUNDANCE --updated-gtf UPDATED_GTF
                      [--group-2-name GROUP_2_NAME] --out-dir OUT_DIR
                      [--num-threads NUM_THREADS]
                      [--process-top-n PROCESS_TOP_N]
-                     [--plot-file-type {.pdf,.png}]
+                     [--plot-file-type {.pdf,.png,all}]
                      [--diff-transcripts DIFF_TRANSCRIPTS]
                      [--adj-pvalue ADJ_PVALUE] [--use-unadjusted-pvalue]
                      [--delta-proportion DELTA_PROPORTION]
@@ -93,7 +93,7 @@ options:
                         Generate plots and classify isoform differences for
                         the top "n" significant genes. By default all
                         significant genes are processed
-  --plot-file-type {.pdf,.png}
+  --plot-file-type {.pdf,.png,all}
                         The file type for output plots (default .pdf))
   --diff-transcripts DIFF_TRANSCRIPTS
                         The path to the differential transcript results. If
@@ -208,7 +208,7 @@ usage: visualize_isoforms.py [-h] --gene-id GENE_ID [--gene-name GENE_NAME]
                              --abundance ABUNDANCE --updated-gtf UPDATED_GTF
                              [--gencode-gtf GENCODE_GTF]
                              [--diff-transcripts DIFF_TRANSCRIPTS] --out-dir
-                             OUT_DIR [--plot-file-type {.pdf,.png}]
+                             OUT_DIR [--plot-file-type {.pdf,.png,all}]
                              [--main-transcript-ids MAIN_TRANSCRIPT_IDS]
                              [--max-transcripts MAX_TRANSCRIPTS]
                              [--intron-scaling INTRON_SCALING]
@@ -238,7 +238,7 @@ options:
                         The path to the differential transcript results. Can
                         be used to determine --main-transcript-ids
   --out-dir OUT_DIR     The path to use as the output directory
-  --plot-file-type {.pdf,.png}
+  --plot-file-type {.pdf,.png,all}
                         The file type for output plots (default .pdf))
   --main-transcript-ids MAIN_TRANSCRIPT_IDS
                         A comma separated list of transcript IDs to plot as

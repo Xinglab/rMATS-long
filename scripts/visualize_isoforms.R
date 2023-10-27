@@ -7,7 +7,9 @@ cpm_and_proportion_path <- args[1]
 max_transcripts_str <- args[2]
 transcript_color_string <- args[3]
 group_color_string <- args[4]
-out_plot_path <- args[5]
+
+number_of_out_paths <- base::length(args) - 4
+out_plot_paths <- utils::tail(args, number_of_out_paths)
 
 parse_color_strings <- function(color_string) {
     strings <- base::strsplit(color_string, ',')[[1]]
@@ -76,10 +78,12 @@ combine_plots <- function(prop_plot, cpm_plot, font_size) {
     return(combined_plot)
 }
 
-save_plot <- function(num_samples, combined_plot, out_plot_path) {
+save_plot <- function(num_samples, combined_plot, out_plot_paths) {
     out_width <- base::max(0.25*num_samples + 1, 8)
-    ggplot2::ggsave(out_plot_path, plot=combined_plot, width=out_width,
-                    height=5.8, dpi=300, bg='white')
+    for (out_plot_path in out_plot_paths) {
+      ggplot2::ggsave(out_plot_path, plot=combined_plot, width=out_width,
+                      height=5.8, dpi=300, bg='white')
+    }
 }
 
 create_ggplot_theme <- function(font_size) {
@@ -222,7 +226,7 @@ main <- function() {
                                  unique_sample_colors, font_size)
     cpm_plot <- plot_cpm(data, group_colors, final_transcript_colors, font_size)
     combined <- combine_plots(prop_plot, cpm_plot, font_size)
-    save_plot(num_samples, combined, out_plot_path)
+    save_plot(num_samples, combined, out_plot_paths)
 }
 
 main()
