@@ -204,17 +204,51 @@ def SmoothEnds(inputDF):
 
     return copyDF
 
+def ParseAttributeString(attributes_str):
+    attributes = dict()
+    attribute_pairs = attributes_str.split(';')
+    for attribute_pair in attribute_pairs:
+        attribute_pair = attribute_pair.strip()
+        first_space = attribute_pair.find(' ')
+        if first_space <= 0:
+            continue
+
+        key = attribute_pair[:first_space]
+        value = attribute_pair[first_space + 1:]
+        if value[0] == '"' and value[-1] == '"':
+            # remove quotes
+            value = value[1:-1]
+
+        existing_attributes = attributes.get(key)
+        if existing_attributes:
+            if isinstance(existing_attributes, list):
+                existing_attributes.append(value)
+            else:
+                attributes[key] = [existing_attributes, value]
+        else:
+            attributes[key] = value
+
+    return attributes
+
+def getTranscriptIdFromRow(row):
+    attribute_string = row[8]
+    attributes = ParseAttributeString(attribute_string)
+    transcript_id = attributes.get('transcript_id')
+    return transcript_id
+
 def ParseGTF(infile):
     # Read infile as a pandas dataframe
     gtfDF = read_csv(infile, sep='\t', header=None)
+    allTranscriptID = gtfDF.apply(getTranscriptIdFromRow, axis=1)
+    gtfDF.insert(9, 9, allTranscriptID)
 
     # Pull out transcript annotations in gtfDF
     transcriptDF = gtfDF[gtfDF[2] == 'transcript']
+    exonDF = gtfDF[gtfDF[2] == 'exon']
 
     # Double check that the GTF file only has annotations for two transcript isoforms
     if transcriptDF.shape[0] == 2:
-        # Isolate transcript IDs for each transcript
-        transcriptID = [[x for x in anno.split(';') if 'transcript_id' in x][0].split('\"')[1] for anno in transcriptDF[8]]
+        transcriptID = transcriptDF[9]
 
         # Establish an empty pandas dataframe for output
         inputDF = DataFrame(columns = ['transcript_ID', 'chrom', 'strand', 'exonStart', 'exonEnd'])
@@ -222,19 +256,19 @@ def ParseGTF(infile):
         # For each transcript in transcriptID, record exon start and end coordinates
         for transcript in transcriptID:
             # Determine strand associated with transcript
-            strand = transcriptDF[transcriptDF[8].str.contains(transcript)][6].item()
+            strand = transcriptDF[transcriptDF[9] == transcript][6].item()
 
             # Determine chromosome associated with transcript
-            chrom = transcriptDF[transcriptDF[8].str.contains(transcript)][0].item()
+            chrom = transcriptDF[transcriptDF[9] == transcript][0].item()
 
             # Pull out rows of gtfDF corresponding to exons of given transcript
-            exonDF = gtfDF[(gtfDF[2] == 'exon') & (gtfDF[8].str.contains(transcript))]
+            transcriptExonDF = exonDF[exonDF[9] == transcript]
 
             # Establish sorted lists for exon start and end coordinates based on strand
             if strand == '+':
-                exonStart, exonEnd = sort(exonDF[3]), sort(exonDF[4])
+                exonStart, exonEnd = sort(transcriptExonDF[3]), sort(transcriptExonDF[4])
             else:
-                exonStart, exonEnd = -sort(-exonDF[4]), -sort(-exonDF[3])
+                exonStart, exonEnd = -sort(-transcriptExonDF[4]), -sort(-transcriptExonDF[3])
 
             # Update inputDF with information about current transcript
             inputDF = concat([
