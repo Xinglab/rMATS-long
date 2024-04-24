@@ -19,7 +19,7 @@ For the shiny app, the dependencies for rMATS-long are needed as well as the r-s
 cd rMATS-long
 ./install
 conda activate ./conda_env
-conda install -c conda-forge -c bioconda r-shiny
+conda install -c conda-forge -c bioconda --file ./shiny/conda_requirements.txt
 ```
 
 The shiny server can be run when the conda environment is activated
@@ -37,6 +37,7 @@ The app will look in `data/` for datasets. Each subdirectory is treated as a sep
 * `reference.gtf`: file used as `--gencode-gtf` with `rmats_long.py`
 * `differential_genes.tsv`: output from `rmats_long.py`
 * `differential_transcripts.tsv`: output from `rmats_long.py`
+* `summary.txt`: output from `rmats_long.py`
 
 ### Shiny App
 
@@ -64,6 +65,7 @@ cp ../example/samples_N2_R0_updated.gtf ./data/example/updated.gtf
 cp ../example/gencode.v43.annotation_filtered.gtf ./data/example/reference.gtf
 cp ../example_out/differential_genes.tsv ./data/example/
 cp ../example_out/differential_transcripts.tsv ./data/example/
+cp ../example_out/summary.txt ./data/example/
 ```
 
 Follow the instructions at [Shiny App](#shiny-app). Gene name "DDR1" can be used
