@@ -596,6 +596,14 @@ def write_summary(summary, out_dir, use_unadjusted_pvalue):
     return summary_path
 
 
+def visualize_summary(summary_path, out_dir):
+    script_dir = rmats_long_utils.get_script_dir()
+    visualize_script = os.path.join(script_dir,
+                                    'visualize_summary.R')
+    command = ['Rscript', visualize_script, summary_path, out_dir]
+    rmats_long_utils.run_command(command)
+
+
 def rmats_long(args):
     summary = dict()
     rmats_long_utils.create_output_dir(args.out_dir)
@@ -646,6 +654,7 @@ def main():
     summary = rmats_long(args)
     summary_path = write_summary(summary, args.out_dir,
                                  args.use_unadjusted_pvalue)
+    visualize_summary(summary_path, args.out_dir)
     print('\nsummary written to {}'.format(summary_path))
 
 

@@ -9,5 +9,7 @@
 /gene_pvalues.png
 /precision_by_gene_expression.png
 /summary.txt
+/summary_plot.pdf
+/summary_plot.png
 /transcript_pvalues.png
 /transcripts_per_gene.png

@@ -75,7 +75,8 @@ get_file_paths <- function(datasets) {
   dataset <- datasets[[1]]
   if (dataset == '') {
     return(base::list(abun='', updated='', group_1='', group_2='', ref='',
-                      diff_trans='', diff_genes=''))
+                      diff_trans='', diff_genes='', summary_txt='',
+                      summary_png='', summary_pdf=''))
   }
 
   sub_dir <- base::paste0(DATA_DIR, '/', dataset)
@@ -86,9 +87,13 @@ get_file_paths <- function(datasets) {
   ref <- base::paste0(sub_dir, '/reference.gtf')
   diff_trans <- base::paste0(sub_dir, '/differential_transcripts.tsv')
   diff_genes <- base::paste0(sub_dir, '/differential_genes.tsv')
+  summary_txt <- base::paste0(sub_dir, '/summary.txt')
+  summary_png <- base::paste0(sub_dir, '/summary_plot.png')
+  summary_pdf <- base::paste0(sub_dir, '/summary_plot.pdf')
   return(base::list(abun=abun, updated=updated, group_1=group_1,
                     group_2=group_2, ref=ref, diff_trans=diff_trans,
-                    diff_genes=diff_genes))
+                    diff_genes=diff_genes, summary_txt=summary_txt,
+                    summary_png=summary_png, summary_pdf=summary_pdf))
 }
 
 find_gene_id <- function(file_paths, gene_names, gene_ids) {
@@ -113,6 +118,20 @@ read_diff_transcripts <- function(path, gene_id) {
   parsed <- utils::read.table(path, header=TRUE, sep='\t')
   for_gene <- parsed[parsed$gene_id == gene_id, ]
   return(for_gene)
+}
+
+get_default_differential_transcripts_table <- function() {
+  return(base::list(gene_id=base::c('...'),
+                    feature_id=base::c('...')))
+}
+
+get_default_isoform_differences_table <- function() {
+  return(base::list(transcript1=base::c('...'),
+                    transcript2=base::c('...')))
+}
+
+get_default_image <- function() {
+  return (base::paste0(SHINY_SCRIPT_PATH, '/clear_1px.png'))
 }
 
 get_gene_gtf <- function(file_paths, gene_id, output_dir) {
@@ -221,6 +240,23 @@ generate_plots <- function(file_paths, gene_id, output_dir, intron_scaling,
   return(return_code != 0)
 }
 
+generate_summary_plot <- function(file_paths, output_dir) {
+  if (!base::file.exists(file_paths$summary_txt)) {
+    return(base::paste0('Need ', file_paths$summary_txt,
+                        ' to generate summary plot'))
+  }
+
+  script <- base::paste0(RMATS_LONG_SCRIPT_PATH, '/visualize_summary.R')
+  command_env <- get_command_env()
+  args <- base::c(script, file_paths$summary_txt, output_dir)
+  return_code <- base::system2('Rscript', args, env=command_env)
+  if (return_code != 0) {
+    return('command to generate summary failed')
+  }
+
+  return(FALSE)
+}
+
 server <- function(input, output, session) {
   datasets <- get_dataset_names()
   shiny::updateSelectInput(session, 'dataset_select', choices=datasets)
@@ -246,7 +282,89 @@ server <- function(input, output, session) {
     output$download_diff_genes <- shiny::downloadHandler(
       filename='differential_genes.tsv',
       content=function(file) {base::file.copy(file_paths$diff_genes, file)})
+
+    default_image_path <- get_default_image()
+    output$abundance_image <- shiny::renderImage(
+      list(src=default_image_path, width='800', height='600',
+           alt='default image'),
+      deleteFile=FALSE)
+    output$structure_image <- shiny::renderImage(
+        list(src=default_image_path, width='800', height='300',
+             alt='structure plot'),
+        deleteFile=FALSE)
+    if (base::file.exists(file_paths$summary_png)
+        && base::file.exists(file_paths$summary_pdf)) {
+      output$summary_image <- shiny::renderImage(
+        list(src=file_paths$summary_png, width='1000', height='800',
+             alt='summary plot'),
+        deleteFile=FALSE)
+      output$summary_png <- shiny::downloadHandler(
+        filename='summary_plot.png',
+        content=function(file) {base::file.copy(file_paths$summary_png, file)})
+      output$summary_pdf <- shiny::downloadHandler(
+        filename='summary_plot.pdf',
+        content=function(file) {base::file.copy(file_paths$summary_pdf, file)})
+    } else {
+      output$summary_image <- shiny::renderImage(
+              list(src=default_image_path, width='1000', height='800',
+                   alt='default image'),
+              deleteFile=FALSE)
+    }
+
+    output$differential_transcripts <- shiny::renderTable(
+      get_default_differential_transcripts_table())
+    output$isoform_differences <- shiny::renderTable(
+      get_default_isoform_differences_table())
+
+    bslib::nav_select('top_navset', selected='summary_tab',
+                      session=session)
+    bslib::nav_select('gene_navset', selected='gene_parameters_tab',
+                      session=session)
   })
+
+  shiny::bindEvent(shiny::observe({
+      shiny::showNotification('creating summary plot...', session=session,
+                              duration=NULL, id='creating_summary')
+      file_paths <- get_file_paths(input$dataset_select)
+      output_dir <- get_output_dir(input$dataset_select)
+      error <- generate_summary_plot(file_paths, output_dir)
+      if (error) {
+        message <- base::paste0('error generating summary plot: ', error)
+        shiny::showNotification(message, session=session,
+                                duration=20, type='error')
+        shiny::removeNotification(id='creating_summary', session=session)
+        return()
+      }
+
+      summary_png_path <- base::paste0(output_dir, '/summary_plot.png')
+      summary_pdf_path <- base::paste0(output_dir, '/summary_plot.pdf')
+      if (FORCE_775) {
+        base::Sys.chmod(summary_png_path, mode='0775', use_umask=FALSE)
+        base::Sys.chmod(summary_pdf_path, mode='0775', use_umask=FALSE)
+      }
+      base::file.copy(summary_png_path, file_paths$summary_png, overwrite=TRUE)
+      base::file.copy(summary_pdf_path, file_paths$summary_pdf, overwrite=TRUE)
+      if (FORCE_775) {
+        base::Sys.chmod(file_paths$summary_png, mode='0775', use_umask=FALSE)
+        base::Sys.chmod(file_paths$summary_pdf, mode='0775', use_umask=FALSE)
+      }
+
+      output$summary_image <- shiny::renderImage(
+        list(src=file_paths$summary_png, width='1000', height='800',
+             alt='summary plot'),
+        deleteFile=FALSE)
+      output$summary_png <- shiny::downloadHandler(
+        filename='summary_plot.png',
+        content=function(file) {base::file.copy(file_paths$summary_png, file)})
+      output$summary_pdf <- shiny::downloadHandler(
+        filename='summary_plot.pdf',
+        content=function(file) {base::file.copy(file_paths$summary_pdf, file)})
+
+      shiny::removeNotification(id='creating_summary', session=session)
+    }),
+    input$plot_summary_button
+  )
+
   shiny::bindEvent(shiny::observe({
       shiny::showNotification('creating plots...', session=session, duration=NULL,
                               id='creating_plots')
@@ -289,10 +407,12 @@ server <- function(input, output, session) {
       }
 
       output$abundance_image <- shiny::renderImage(list(src=abundance_path_png,
-                                                        width='800', height='600'),
+                                                        width='800', height='600',
+                                                        alt='abundance plot'),
                                                    deleteFile=FALSE)
       output$structure_image <- shiny::renderImage(list(src=structure_path_png,
-                                                        width='800', height='300'),
+                                                        width='800', height='300',
+                                                        alt='structure plot'),
                                                    deleteFile=FALSE)
 
       output$abundance_png <- shiny::downloadHandler(
@@ -308,6 +428,8 @@ server <- function(input, output, session) {
         filename='structure.pdf',
         content=function(file) {base::file.copy(structure_path_pdf, file)})
 
+      bslib::nav_select('gene_navset', selected='gene_abundance_tab',
+                        session=session)
       shiny::removeNotification(id='creating_plots', session=session)
     }),
     input$plot_button
