@@ -27,16 +27,17 @@ conda install -c conda-forge -c bioconda rmats-long
 ```
 The rMATS-long scripts are included in the bioconda package and will be available in that conda environment at `/path/to/conda_env/rMATS-long/`
 
-* [Python](https://www.python.org/) (v3.10.9)
+* [Python](https://www.python.org/) (v3.10.14)
   + [NetworkX](https://networkx.org/) (v2.8.8)
-  + [NumPy](https://numpy.org/) (v1.24.2)
+  + [NumPy](https://numpy.org/) (v1.24.4)
   + [pandas](https://pandas.pydata.org/) (v1.5.3)
-  + [matplotlib](https://matplotlib.org/) (v3.7.1)
+  + [matplotlib](https://matplotlib.org/) (v3.7.3)
 * [R](https://www.r-project.org/) (v4.2.0)
   + [BiocParallel](https://bioconductor.org/packages/release/bioc/html/BiocParallel.html) (v1.32.5)
   + [DRIMSeq](https://bioconductor.org/packages/release/bioc/html/DRIMSeq.html) (v1.26.0)
-  + [ggplot2](https://ggplot2.tidyverse.org/) (v3.4.1)
-  + [cowplot](https://wilkelab.org/cowplot/index.html) (v1.1.1)
+  + [ggplot2](https://ggplot2.tidyverse.org/) (v3.4.4)
+  + [cowplot](https://wilkelab.org/cowplot/index.html) (v1.1.3)
+  + [ggrepel](https://ggrepel.slowkow.com/) (v0.9.5)
 
 Those versions were used during testing. Other versions may also be compatible
 

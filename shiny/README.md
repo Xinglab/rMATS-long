@@ -47,11 +47,14 @@ Then the app can be used with a web browser on the same machine that is running 
 
 With the app open in a browser the plots for a gene can be generated:
 * Select a dataset from the dropdown
-* Fill out the input boxes (either "gene name" or "gene ID" is required)
-* Click the "create plots" button
-* Wait for the plot to be displayed
-
-After plotting the gene, the "Isoform differences" section at the bottom of the page can be run by setting a transcript ID and clicking the "classify isoform differences" button
+* On the Summary tab, scroll down and click "create summary plot"
+* On the Gene tab
+  + Fill out the input boxes on the Parameters tab (either "gene name" or "gene ID" is required)
+  + Click the "create plots" button
+  + View results on the other tabs
+* On the Transcript tab
+  + Enter a transcript ID for the gene that was just processed
+  + Click "classify isoform differences"
 
 ### Example
 

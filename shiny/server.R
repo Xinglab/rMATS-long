@@ -342,8 +342,8 @@ server <- function(input, output, session) {
         base::Sys.chmod(summary_png_path, mode='0775', use_umask=FALSE)
         base::Sys.chmod(summary_pdf_path, mode='0775', use_umask=FALSE)
       }
-      base::file.copy(summary_png_path, file_paths$summary_png)
-      base::file.copy(summary_pdf_path, file_paths$summary_pdf)
+      base::file.copy(summary_png_path, file_paths$summary_png, overwrite=TRUE)
+      base::file.copy(summary_pdf_path, file_paths$summary_pdf, overwrite=TRUE)
       if (FORCE_775) {
         base::Sys.chmod(file_paths$summary_png, mode='0775', use_umask=FALSE)
         base::Sys.chmod(file_paths$summary_pdf, mode='0775', use_umask=FALSE)

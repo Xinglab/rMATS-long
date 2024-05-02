@@ -9,3 +9,4 @@ python=3.10.*
 r-base=4.2.*
 r-cowplot=1.1.*
 r-ggplot2=3.4.*
+r-ggrepel=0.9.*
