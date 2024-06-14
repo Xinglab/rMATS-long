@@ -156,18 +156,25 @@ def classify_isoform_differences_with_temp_files(temp_files,
     headers = ['transcript1', 'transcript2', 'event', 'coordinates']
     with open(out_tsv, 'wt') as combined_handle:
         rmats_long_utils.write_tsv_line(combined_handle, headers)
-        for transcript, lines in lines_by_transcript.items():
-            if transcript == main_transcript_id:
-                continue
+        transcripts = sorted(lines_by_transcript.keys())
+        num_transcripts = len(transcripts)
+        for i, first_transcript in enumerate(transcripts):
+            if i == (num_transcripts - 1):
+                break
 
-            write_gtf_lines(isoform_gtf, main_transcript_lines, lines)
-            rmats_long_utils.run_command(command)
-            with open(isoform_tsv, 'rt') as single_handle:
-                for line_i, line in enumerate(single_handle):
-                    if line_i == 0:
-                        continue  # skip header
+            first_transcript_lines = lines_by_transcript[first_transcript]
+            for j in range(i + 1, num_transcripts):
+                second_transcript = transcripts[j]
+                second_transcript_lines = lines_by_transcript[second_transcript]
+                write_gtf_lines(isoform_gtf, first_transcript_lines,
+                                second_transcript_lines)
+                rmats_long_utils.run_command(command)
+                with open(isoform_tsv, 'rt') as single_handle:
+                    for line_i, line in enumerate(single_handle):
+                        if line_i == 0:
+                            continue  # skip header
 
-                    combined_handle.write(line)
+                        combined_handle.write(line)
 
 
 def main():
