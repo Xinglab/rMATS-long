@@ -59,6 +59,25 @@ plot_cpm <- function(data, group_colors, transcript_colors, font_size) {
     return(plot)
 }
 
+## Based on https://github.com/wilkelab/cowplot/issues/202
+get_legend_wrapper <- function(plot) {
+    legend <- cowplot::get_legend(plot)
+    if (!base::inherits(legend, 'zeroGrob')) {
+        return(legend)
+    }
+
+    grob <- ggplot2::ggplotGrob(plot)
+    indices <- base::grep('guide-box', grob$layout$name)
+    not_empty <- !base::vapply(grob$grobs[indices],
+                               base::inherits, what='zeroGrob',
+                               FUN.VALUE=base::logical(1))
+    indices <- indices[not_empty]
+    if (base::length(indices) > 0) {
+        return(grob$grobs[[indices[1]]])
+    }
+    return(NULL)
+}
+
 combine_plots <- function(prop_plot, cpm_plot, font_size) {
     prop_with_legend_plot <- prop_plot +
         guides(fill=ggplot2::guide_legend(nrow=2, title.position='top',
@@ -69,7 +88,7 @@ combine_plots <- function(prop_plot, cpm_plot, font_size) {
                                            keywidth=1, keyheight=1, order=2)) +
         ggplot2::theme(legend.position='bottom')
 
-    legend_plot <- cowplot::get_legend(prop_with_legend_plot)
+    legend_plot <- get_legend_wrapper(prop_with_legend_plot)
     box_plot <- cowplot::plot_grid(cpm_plot, prop_plot, align='v', ncol=1,
                                    rel_heights=c(1, 1.8))
     combined_plot <- cowplot::plot_grid(box_plot, legend_plot, ncol=1,
