@@ -290,10 +290,40 @@ main <- function() {
     } else {
         prec_moderation <- 'trended'
     }
-    drim_data <- DRIMSeq::dmPrecision(drim_data, design=design_full,
-                                      add_uniform=TRUE,
-                                      prec_moderation=prec_moderation,
-                                      BPPARAM=bpparam)
+
+    precision_result <- base::tryCatch(
+      DRIMSeq::dmPrecision(drim_data, design=design_full,
+                           add_uniform=TRUE,
+                           prec_moderation=prec_moderation,
+                           BPPARAM=bpparam),
+      error=base::identity,
+      warning=base::identity
+    )
+    prec_had_error <- methods::is(precision_result, 'error')
+    prec_had_warn <- methods::is(precision_result, 'warning')
+    if (prec_had_error || prec_had_warn) {
+        message <- 'DRIMSeq::dmPrecision had'
+        if (prec_had_error) {
+            message <- base::paste0(message, ' an error')
+        } else {
+            message <- base::paste0(message, ' a warning')
+        }
+        message <- base::paste0(message, ': ', precision_result)
+        base::cat(base::paste0(message, '\n'))
+
+        if (prec_moderation == 'none') {
+            base::cat('Ignoring since already using prec_moderation=none\n')
+        } else {
+            base::cat('Retrying with prec_moderation=none\n')
+            precision_result <- DRIMSeq::dmPrecision(
+              drim_data, design=design_full,
+              add_uniform=TRUE,
+              prec_moderation='none',
+              BPPARAM=bpparam)
+        }
+    }
+
+    drim_data <- precision_result
     plot_precision(drim_data, out_dir_path)
 
     drim_data <- DRIMSeq::dmFit(drim_data, design=design_full,
