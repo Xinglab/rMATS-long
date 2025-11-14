@@ -1,4 +1,7 @@
+/.snakemake/
 /conda_env/
-__pycache__/
+/references/
+/results/
 /shiny/data/
 /shiny/output/
+__pycache__/

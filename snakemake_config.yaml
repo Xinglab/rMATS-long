@@ -1,0 +1,90 @@
+# Resource allocation
+add_novel_transcripts_to_gtf_mem_gb: 2
+add_novel_transcripts_to_gtf_time_hr: 6
+clean_espresso_gtf_mem_gb: 2
+clean_espresso_gtf_time_hr: 6
+count_reads_for_asms_mem_gb: 8
+count_reads_for_asms_threads: 16
+count_reads_for_asms_time_hr: 96
+create_gtf_from_asm_definitions_mem_gb: 2
+create_gtf_from_asm_definitions_time_hr: 6
+detect_splicing_events_mem_gb: 24
+detect_splicing_events_threads: 12
+detect_splicing_events_time_hr: 24
+organize_alignment_info_mem_gb: 4
+organize_alignment_info_time_hr: 24
+organize_gene_info_mem_gb: 4
+organize_gene_info_time_hr: 12
+plot_gene_sets_mem_gb: 4
+plot_gene_sets_time_hr: 1
+rmats_long_mem_gb: 96
+rmats_long_threads: 16
+rmats_long_time_hr: 72
+rmats_long_plots_mem_gb: 32
+rmats_long_plots_threads: 16
+rmats_long_plots_time_hr: 24
+simplify_alignment_info_mem_gb: 4
+simplify_alignment_info_time_hr: 12
+# Command options
+adj_pvalue: 0.05
+delta_proportion: 0.05
+average_reads_per_group: 10
+average_cpm_per_group: 0
+min_cpm_per_group: 0
+asm_proportion_of_gene: 0.05
+min_cpm_per_asm: 0
+min_isoform_reads: 1
+limit_asm_to_top_n_isoforms: 50
+min_reads_per_edge: 5
+max_nodes_in_event: 50
+max_paths_in_event: 50
+plot_file_type: '.png'
+intron_scaling: 1
+max_transcripts: 7
+simplify_gene_isoform_endpoints: false
+filter_gene_isoforms_by_edge: false
+quantify_full_length_transcripts: true
+quantify_asms: true
+# Reference files:
+# The snakemake can automatically download and gunzip files if
+# a matching url entry is given in the reference_files section below.
+# If the entry in the reference_files section ends with .gz then the
+# snakemake will gunzip the file.
+# **The gtf_name should not end with .gz**
+gtf_name: 'gencode.v47.primary_assembly.annotation.gtf'
+# The entries under reference_files should be
+# file_name.with.extension:
+#   url: 'url_path/to_the/file_name.with.extension'
+#
+# The 'url:' will be used to download the file and it will be put in
+# references/ with the name given on the line above the 'url:'.
+# The file will be gunzipped and the .gz removed if needed.
+reference_files:
+  gencode.v47.primary_assembly.annotation.gtf.gz:
+    url: 'https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.primary_assembly.annotation.gtf.gz'
+# Input files:
+espresso_gtf: '/path/to/example/samples_N2_R0_updated.gtf'  # optional
+# An optional .tsv with 1 line per sample.
+# The first line has the column names.
+# The first column is sample_id.
+# Each additional column is a covariate.
+covar_tsv: ''
+group_1_name: 'PC3E'
+group_1_samples:
+  pc3e_1:
+    - sam: '/path/to/example/pc3e_1_filtered.sam'
+  pc3e_2:
+    - sam: '/path/to/example/pc3e_2_filtered.sam'
+  pc3e_3:
+    - sam: '/path/to/example/pc3e_3_filtered.sam'
+group_2_name: 'GS689'
+group_2_samples:
+  gs689_1:
+    - sam: '/path/to/example/gs689_1_filtered.sam'
+  gs689_2:
+    - sam: '/path/to/example/gs689_2_filtered.sam'
+  gs689_3:
+    - sam: '/path/to/example/gs689_3_filtered.sam'
+# Additional configuration
+run_name: 'example'
+# conda_wrapper: '/path/to/conda_wrapper' # will be written by ./install
