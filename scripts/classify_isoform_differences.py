@@ -69,7 +69,7 @@ def get_alt_script_path():
 
 def filter_gtf_to_gene(updated_gtf, gencode_gtf, main_transcript_id):
     gene_id = find_gene_id_from_gtf(main_transcript_id, updated_gtf)
-    if gene_id is None:
+    if (gene_id is None) and (gencode_gtf is not None):
         gene_id = find_gene_id_from_gtf(main_transcript_id, gencode_gtf)
 
     if gene_id is None:

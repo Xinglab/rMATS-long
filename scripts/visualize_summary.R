@@ -6,13 +6,48 @@ args <- base::commandArgs(trailingOnly=TRUE)
 summary_path <- args[1]
 out_dir <- args[2]
 
+get_event_categories <- function() {
+  return(base::c('exon skipping',
+                 "alternative 5'-splice site",
+                 "alternative 3'-splice site",
+                 'mutually exclusive exons',
+                 'intron retention',
+                 'alternative first exon',
+                 'alternative last exon',
+                 'complex',
+                 'combinatorial',
+                 'alternative endpoints'))
+}
+
+get_event_colors <- function() {
+  return(base::c('#1E79B3',  ## blue
+                 '#A5CDE4',  ## pale blue
+                 '#B4D789',  ## pale green
+                 '#E42A89',  ## pink
+                 '#E4AB23',  ## orange
+                 '#199C77',  ## blue green
+                 '#F06046',  ## light red
+                 '#7670B2',  ## purple
+                 '#686868',  ## grey
+                 '#E6DAA6')) ## beige
+}
+
+get_color_for_category <- function(category) {
+  categories <- get_event_categories()
+  colors <- get_event_colors()
+  for (i in 1:base::length(categories)) {
+    if (category == categories[i]) {
+      return(colors[i])
+    }
+  }
+
+  stop(base::paste0('No color for category: ', category))
+}
+
 read_summary <- function(summary_path) {
   summary_lines <- base::readLines(summary_path)
 
-  event_keys <- base::c('exon skipping', "alternative 5'-splice site",
-                        "alternative 3'-splice site", 'mutually exclusive exons',
-                        'intron retention', 'alternative first exon',
-                        'alternative last exon', 'complex', 'combinatorial')
+  event_keys <- get_event_categories()
   categories <- base::vector(mode='character')
   counts <- base::vector(mode='integer')
   for (line in summary_lines) {
@@ -49,16 +84,7 @@ create_ggplot_theme <- function() {
 }
 
 make_event_plot <- function(df) {
-  colors <- base::c('#1E79B3',  ## blue
-                    '#A5CDE4',  ## pale blue
-                    '#B4D789',  ## pale green
-                    '#E42A89',  ## pink
-                    '#E4AB23',  ## orange
-                    '#199C77',  ## blue green
-                    '#F06046',  ## light red
-                    '#7670B2',  ## purple
-                    '#686868')  ## grey
-
+  colors <- base::vector(mode='character')
   total_count <- base::sum(df$count)
   df$percent <- base::round(df$count / total_count, digits=3)
   cumulative <- base::cumsum(df$percent)
@@ -70,6 +96,9 @@ make_event_plot <- function(df) {
     }
     offset <- offset - (df$percent[i] / 2)
     label_pos <- base::append(label_pos, offset)
+
+    color <- get_color_for_category(df$category[i])
+    colors <- base::append(colors, color)
   }
   df$label_pos <- label_pos
 
@@ -109,6 +138,9 @@ save_plot <- function(plot, out_dir) {
 
 main <- function() {
   df <- read_summary(summary_path)
+  if (base::nrow(df) == 0) {
+    return()
+  }
   plot <- make_event_plot(df)
   save_plot(plot, out_dir)
 }

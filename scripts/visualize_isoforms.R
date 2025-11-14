@@ -34,8 +34,11 @@ plot_proportion <- function(data, group_colors, transcript_colors,
         ## The group_colors are used in the theme to color the x-axis labels.
         ggplot2::geom_point(aes(y=NA_integer_, color=group), size=6, shape=15) +
         ggplot2::scale_color_manual(name='Group', values=group_colors) +
+        ## reverse=TRUE puts the first transcript on the bottom
         ggplot2::geom_bar(stat='identity',
-                          position=ggplot2::position_stack(vjust=1), width=0.9,
+                          position=ggplot2::position_stack(vjust=1,
+                                                           reverse=TRUE),
+                          width=0.9,
                           color='black', linewidth=0.5) +
         ggplot2::scale_fill_manual(name='Transcript ID',
                                    values=transcript_colors) +
@@ -48,7 +51,7 @@ plot_cpm <- function(data, group_colors, transcript_colors, font_size) {
     plot <- ggplot2::ggplot(data=data,
                             ggplot2::aes(x=sample, y=cpm, fill=transcript,
                                          group=transcript)) +
-        ## The CPM plot has the bars stacked in reverse order.
+        ## reverse=TRUE puts the first transcript on the bottom
         ggplot2::geom_bar(stat='identity',
                           position=ggplot2::position_stack(vjust=1,
                                                            reverse=TRUE),
@@ -78,12 +81,12 @@ get_legend_wrapper <- function(plot) {
     return(NULL)
 }
 
-combine_plots <- function(prop_plot, cpm_plot, font_size) {
+combine_plots <- function(prop_plot, cpm_plot, font_size, num_legend_rows) {
     prop_with_legend_plot <- prop_plot +
-        guides(fill=ggplot2::guide_legend(nrow=2, title.position='top',
+        guides(fill=ggplot2::guide_legend(nrow=num_legend_rows, title.position='top',
                                           label.theme=ggplot2::element_text(size=font_size-1.5),
                                           keywidth=1, keyheight=1, order=1)) +
-        guides(color=ggplot2::guide_legend(nrow=2, title.position='top',
+        guides(color=ggplot2::guide_legend(nrow=num_legend_rows, title.position='top',
                                            label.theme=ggplot2::element_text(size=font_size-1.5),
                                            keywidth=1, keyheight=1, order=2)) +
         ggplot2::theme(legend.position='bottom')
@@ -97,8 +100,25 @@ combine_plots <- function(prop_plot, cpm_plot, font_size) {
     return(combined_plot)
 }
 
-save_plot <- function(num_samples, combined_plot, out_plot_paths) {
-    out_width <- base::max(0.25*num_samples + 1, 8)
+longest_string_length <- function(strings) {
+    return(base::max(base::sapply(strings, base::nchar)))
+}
+
+save_plot <- function(transcripts, groups, num_legend_rows, num_samples,
+                      combined_plot, out_plot_paths) {
+    transcripts <- base::levels(transcripts)
+    max_transcript_chars <- longest_string_length(transcripts)
+    max_group_chars <- longest_string_length(groups)
+    num_transcripts <- base::length(transcripts)
+    num_groups <- base::length(groups)
+    num_transcript_cols <- base::ceiling(num_transcripts / num_legend_rows)
+    num_group_cols <- base::ceiling(num_groups / num_legend_rows)
+    transcript_chars <- max_transcript_chars * num_transcript_cols
+    group_chars <- max_group_chars * num_group_cols
+    legend_chars <- transcript_chars + group_chars
+    legend_cols <- num_transcript_cols + num_group_cols
+    legend_width <- (0.4 * legend_cols) + (legend_chars / 12)
+    out_width <- base::max(8, 0.3*num_samples + 1, legend_width)
     for (out_plot_path in out_plot_paths) {
       ggplot2::ggsave(out_plot_path, plot=combined_plot, width=out_width,
                       height=5.8, dpi=300, bg='white')
@@ -244,8 +264,10 @@ main <- function() {
     prop_plot <- plot_proportion(data, group_colors, final_transcript_colors,
                                  unique_sample_colors, font_size)
     cpm_plot <- plot_cpm(data, group_colors, final_transcript_colors, font_size)
-    combined <- combine_plots(prop_plot, cpm_plot, font_size)
-    save_plot(num_samples, combined, out_plot_paths)
+    num_legend_rows <- 2
+    combined <- combine_plots(prop_plot, cpm_plot, font_size, num_legend_rows)
+    save_plot(data$transcript, unique_groups, num_legend_rows, num_samples,
+              combined, out_plot_paths)
 }
 
 main()
