@@ -1,7 +1,11 @@
 /.snakemake/
+/build/
 /conda_env/
 /references/
 /results/
 /shiny/data/
 /shiny/output/
+/src/rmats_long.egg-info/
+/src/rmats_long/*.c
+/src/rmats_long/source_code_commit.txt
 __pycache__/

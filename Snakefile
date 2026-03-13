@@ -22,6 +22,7 @@ def all_input(wildcards):
     inputs = dict()
     quant_full = config.get('quantify_full_length_transcripts')
     quant_asms = config.get('quantify_asms')
+    quant_basic = config.get('quantify_basic_events')
     if quant_full:
         inputs['rmats_long_full_len'] = os.path.join(
             result_dir(), 'rmats_long_full_length', 'results_by_gene')
@@ -30,6 +31,11 @@ def all_input(wildcards):
         inputs['rmats_long_asm'] = os.path.join(
             result_dir(), 'rmats_long_asm', 'results_by_gene')
         inputs['asm_gtf'] = os.path.join(result_dir(), 'asm.gtf')
+
+    if quant_basic:
+        inputs['rmats_long_basic'] = os.path.join(
+            result_dir(), 'rmats_long_basic', 'results_by_gene')
+        inputs['basic_gtf'] = os.path.join(result_dir(), 'basic_events.gtf')
 
     if quant_full and quant_asms:
         inputs['venn'] = os.path.join(result_dir(), 'significant_genes_venn.png')
@@ -116,12 +122,12 @@ rule add_novel_transcripts_to_gtf:
         err=os.path.join(result_dir(), 'add_novel_transcripts_to_gtf_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'add_novel_transcripts_to_gtf.py'),
+        script='add_novel_transcripts_to_gtf.py',
     resources:
         mem_mb=config['add_novel_transcripts_to_gtf_mem_gb'] * 1024,
         time_hours=config['add_novel_transcripts_to_gtf_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --espresso-gtf {input.cleaned}'
         ' --other-gtf {input.ref}'
@@ -139,12 +145,12 @@ rule clean_espresso_gtf:
         err=os.path.join(result_dir(), 'clean_espresso_gtf_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'clean_espresso_gtf.py'),
+        script='clean_espresso_gtf.py',
     resources:
         mem_mb=config['clean_espresso_gtf_mem_gb'] * 1024,
         time_hours=config['clean_espresso_gtf_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --in-gtf {input.gtf}'
         ' --out-gtf {output.cleaned}'
@@ -157,24 +163,24 @@ rule count_reads_for_asms:
         gtf_dir=os.path.join(result_dir(), 'annotation'),
         align_dir=os.path.join(result_dir(), 'alignments'),
     output:
-        tsv=os.path.join(result_dir(), '{mode}_counts.tsv'),
+        count_dir=directory(os.path.join(result_dir(), '{mode}_counts')),
     log:
         out=os.path.join(result_dir(), 'count_reads_for_asms_{mode}_log.out'),
         err=os.path.join(result_dir(), 'count_reads_for_asms_{mode}_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'count_reads_for_asms.py'),
+        script='count_reads_for_asms.py',
     threads: config['count_reads_for_asms_threads']
     resources:
         mem_mb=config['count_reads_for_asms_mem_gb'] * 1024,
         time_hours=config['count_reads_for_asms_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --event-dir {input.event_dir}'
         ' --gtf-dir {input.gtf_dir}'
         ' --align-dir {input.align_dir}'
-        ' --out-tsv {output.tsv}'
+        ' --out-dir {output.count_dir}'
         ' --num-threads {threads}'
         ' 1> {log.out}'
         ' 2> {log.err}'
@@ -214,32 +220,50 @@ def max_paths_in_event_param():
 
 
 def full_gene_asm_param(wildcards):
-    if wildcards.mode == 'asm':
-        return ''
+    if wildcards.mode == 'full_length':
+        return '--output-full-gene-asm'
 
-    return '--output-full-gene-asm'
+    return ''
+
+
+def basic_events_param(wildcards):
+    if wildcards.mode == 'basic':
+        return '--output-basic-events'
+
+    return ''
 
 
 def simplify_gene_isoform_endpoints_param(wildcards):
-    if wildcards.mode == 'asm':
-        return ''
-
     simplify = config.get('simplify_gene_isoform_endpoints')
     if not simplify:
         return ''
 
-    return '--simplify-gene-isoform-endpoints'
+    if wildcards.mode == 'full_length':
+        return '--simplify-gene-isoform-endpoints'
+
+    return ''
 
 
 def filter_gene_isoforms_by_edge_param(wildcards):
-    if wildcards.mode == 'asm':
-        return ''
-
     filter_by_edge = config.get('filter_gene_isoforms_by_edge')
     if not filter_by_edge:
         return ''
 
-    return '--filter-gene-isoforms-by-edge'
+    if wildcards.mode == 'full_length':
+        return '--filter-gene-isoforms-by-edge'
+
+    return ''
+
+
+def output_strict_only_param(wildcards):
+    if wildcards.mode != 'asm':
+        return ''
+
+    require_strict = config.get('require_asms_to_be_strict')
+    if require_strict:
+        return '--output-strict-only'
+
+    return ''
 
 
 rule detect_splicing_events:
@@ -252,19 +276,21 @@ rule detect_splicing_events:
         err=os.path.join(result_dir(), 'detect_splicing_events_{mode}_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'detect_splicing_events.py'),
+        script='detect_splicing_events.py',
         min_reads=min_reads_per_edge_param(),
         max_nodes=max_nodes_in_event_param(),
         max_paths=max_paths_in_event_param(),
         full_gene=full_gene_asm_param,
+        basic_events=basic_events_param,
         simplify_gene_isoform_endpoints=simplify_gene_isoform_endpoints_param,
         filter_gene_isoforms_by_edge=filter_gene_isoforms_by_edge_param,
+        output_strict_only=output_strict_only_param,
     threads: config['detect_splicing_events_threads']
     resources:
         mem_mb=config['detect_splicing_events_mem_gb'] * 1024,
         time_hours=config['detect_splicing_events_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --gtf-dir {input.gtf_dir}'
         ' --align-dir {input.align_dir}'
@@ -274,8 +300,10 @@ rule detect_splicing_events:
         ' {params.max_nodes}'
         ' {params.max_paths}'
         ' {params.full_gene}'
+        ' {params.basic_events}'
         ' {params.simplify_gene_isoform_endpoints}'
         ' {params.filter_gene_isoforms_by_edge}'
+        ' {params.output_strict_only}'
         ' 1> {log.out}'
         ' 2> {log.err}'
 
@@ -289,15 +317,39 @@ rule create_gtf_from_asm_definitions:
         err=os.path.join(result_dir(), 'create_gtf_from_asm_definitions_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'create_gtf_from_asm_definitions.py'),
+        script='create_gtf_from_asm_definitions.py',
     resources:
         mem_mb=config['create_gtf_from_asm_definitions_mem_gb'] * 1024,
         time_hours=config['create_gtf_from_asm_definitions_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --event-dir {input.event_dir}'
         ' --out-gtf {output.asm_gtf}'
+        ' 1> {log.out}'
+        ' 2> {log.err}'
+
+rule create_gtf_from_basic_event_definitions:
+    input:
+        event_dir=os.path.join(result_dir(), 'basic_events'),
+    output:
+        basic_events_gtf=os.path.join(result_dir(), 'basic_events.gtf'),
+    log:
+        out=os.path.join(result_dir(),
+                         'create_gtf_from_basic_event_definitions_log.out'),
+        err=os.path.join(result_dir(),
+                         'create_gtf_from_basic_event_definitions_log.err'),
+    params:
+        conda_wrapper=config['conda_wrapper'],
+        script='create_gtf_from_asm_definitions.py',
+    resources:
+        mem_mb=config['create_gtf_from_asm_definitions_mem_gb'] * 1024,
+        time_hours=config['create_gtf_from_asm_definitions_time_hr'],
+    shell:
+        '{params.conda_wrapper} rmats-long'
+        ' {params.script}'
+        ' --event-dir {input.event_dir}'
+        ' --out-gtf {output.basic_events_gtf}'
         ' 1> {log.out}'
         ' 2> {log.err}'
 
@@ -359,13 +411,12 @@ rule organize_alignment_info:
         err=os.path.join(result_dir(), 'organize_alignment_info_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts',
-                            'organize_alignment_info_by_gene_and_chr.py'),
+        script='organize_alignment_info_by_gene_and_chr.py',
     resources:
         mem_mb=config['organize_alignment_info_mem_gb'] * 1024,
         time_hours=config['organize_alignment_info_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --gtf-dir {input.gtf_dir}'
         ' --out-dir {output.align_dir}'
@@ -399,12 +450,12 @@ rule organize_gene_info:
         err=os.path.join(result_dir(), 'organize_gene_info_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'organize_gene_info_by_chr.py'),
+        script='organize_gene_info_by_chr.py',
     resources:
         mem_mb=config['organize_gene_info_mem_gb'] * 1024,
         time_hours=config['organize_gene_info_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --gtf {input.gtf}'
         ' --out-dir {output.gtf_dir}'
@@ -458,12 +509,12 @@ rule simplify_alignment_info:
                          'simplify_alignment_info_{sample}_{sample_i}_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'simplify_alignment_info.py'),
+        script='simplify_alignment_info.py',
     resources:
         mem_mb=config['simplify_alignment_info_mem_gb'] * 1024,
         time_hours=config['simplify_alignment_info_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --in-file {input.in_file}'
         ' --out-tsv {output.tsv}'
@@ -586,7 +637,7 @@ def asm_proportion_of_gene_param():
 def rmats_long_input(wildcards):
     inputs = dict()
     inputs['align_dir'] = os.path.join(result_dir(), 'alignments')
-    counts = '{}_counts.tsv'.format(wildcards.mode)
+    counts = '{}_counts'.format(wildcards.mode)
     inputs['asm_counts'] = os.path.join(result_dir(), counts)
     event_dir = '{}_events'.format(wildcards.mode)
     inputs['event_dir'] = os.path.join(result_dir(), event_dir)
@@ -618,7 +669,7 @@ rule rmats_long:
         err=os.path.join(result_dir(), 'rmats_long_{mode}_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'rmats_long.py'),
+        script='rmats_long.py',
         out_dir=rmats_long_out_dir,
         adj_pvalue=adj_pvalue_param(),
         delta_proportion=delta_proportion_param(),
@@ -636,10 +687,10 @@ rule rmats_long:
         mem_mb=config['rmats_long_mem_gb'] * 1024,
         time_hours=config['rmats_long_time_hr'],
     shell:
-        '{params.conda_wrapper} python'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --align-dir {input.align_dir}'
-        ' --asm-counts {input.asm_counts}'
+        ' --asm-counts-dir {input.asm_counts}'
         ' --event-dir {input.event_dir}'
         ' --group-1 {input.group_1}'
         ' --group-2 {input.group_2}'
@@ -708,10 +759,10 @@ def max_transcripts_param():
 
 
 def no_splice_graph_param(wildcards):
-    if wildcards.mode == 'asm':
-        return ''
+    if wildcards.mode == 'full_length':
+        return '--no-splice-graph-plot'
 
-    return '--no-splice-graph-plot'
+    return ''
 
 
 def rmats_long_plots_summary_path_param(wildcards):
@@ -745,7 +796,7 @@ rule rmats_long_plots:
         err=os.path.join(result_dir(), 'rmats_long_plots_{mode}_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'rmats_long.py'),
+        script='rmats_long.py',
         out_dir=rmats_long_plots_out_dir,
         group_1_name=group_1_name_param(),
         group_2_name=group_2_name_param(),
@@ -767,7 +818,7 @@ rule rmats_long_plots:
     shell:
         # The summary from the non-plots run will be replaced
         'rm -f {params.summary_txt}'
-        ' && {params.conda_wrapper} python'
+        ' && {params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --diff-transcripts {input.diff_iso}'
         ' --gtf-dir {input.gtf_dir}'
@@ -808,14 +859,14 @@ rule plot_gene_sets:
         err=os.path.join(result_dir(), 'plot_gene_sets_log.err'),
     params:
         conda_wrapper=config['conda_wrapper'],
-        script=os.path.join('scripts', 'plot_gene_sets.R'),
+        script='plot_gene_sets.R',
         set_1_name='Full Length',
         set_2_name='ASM',
     resources:
         mem_mb=config['plot_gene_sets_mem_gb'] * 1024,
         time_hours=config['plot_gene_sets_time_hr'],
     shell:
-        '{params.conda_wrapper} Rscript'
+        '{params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' {input.full_genes}'
         ' {input.asm_genes}'

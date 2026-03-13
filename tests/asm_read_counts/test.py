@@ -675,8 +675,7 @@ class AsmReadCountsTest(tests.base_test.BaseTest):
         gene_3_ri_skip_id = '{}_0'.format(gene_3_ri_asm_id)
         gene_3_ri_inc_id = '{}_1'.format(gene_3_ri_asm_id)
 
-        count_path = os.path.join(self._out_dir, 'read_counts.tsv')
-        counts = self.parse_read_compatibility(count_path)
+        counts = self.parse_read_compatibility(self._asm_counts)
         self.assertEqual(counts[overlap_1_and_4_id].get('sample_1_0', 0), 0)
         self.assertEqual(counts[one_to_3_id].get('sample_1_0', 0), 0)
         self.assertEqual(counts[one_to_4_id].get('sample_1_0', 0), 1)

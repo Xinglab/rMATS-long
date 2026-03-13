@@ -12,8 +12,15 @@ function set_script_dir() {
 function install_conda() {
   conda create --prefix "${CONDA_ENV_PREFIX}" || return 1
   conda activate "${CONDA_ENV_PREFIX}" || return 1
-  conda install -c conda-forge -c bioconda --file \
+
+  conda install --override-channels -c conda-forge -c bioconda --file \
         "${SCRIPT_DIR}/conda_requirements.txt" || return 1
+
+  # The CFLAGS and CPPFLAGS environment variables will be used when compiling.
+  # The compile commands can be seen with:
+  #   python -m pip install --verbose .
+  python -m pip install . || return 1
+
   conda deactivate || return 1
 }
 
