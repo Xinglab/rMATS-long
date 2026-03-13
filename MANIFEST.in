@@ -1,0 +1,4 @@
+include LICENSE MANIFEST.in pyproject.toml README.md setup.py
+include src/rmats_long/*py
+include src/rmats_long/*R
+include src/rmats_long/source_code_commit.txt

@@ -2,7 +2,7 @@
 /alignments/
 /annotation/
 /asm.gtf
-/asm_counts.tsv
+/asm_counts/
 /combined.gtf
 /espresso_cleaned.gtf
 /events/
@@ -21,14 +21,15 @@
 /rmats_long/results_by_gene/*/isoform_count_by_asm.tsv
 /rmats_long/results_by_gene/ENSG00000070882.13/
 /rmats_long/results_by_gene/ENSG00000074410.14/
+/rmats_long/results_by_gene/ENSG00000198561.16/0_10*
+/rmats_long/results_by_gene/ENSG00000198561.16/0_11*
 /rmats_long/results_by_gene/ENSG00000198561.16/0_12*
 /rmats_long/results_by_gene/ENSG00000198561.16/0_13*
 /rmats_long/results_by_gene/ENSG00000198561.16/0_14*
 /rmats_long/results_by_gene/ENSG00000198561.16/0_15*
 /rmats_long/results_by_gene/ENSG00000198561.16/0_16*
-/rmats_long/results_by_gene/ENSG00000198561.16/0_17*
-/rmats_long/results_by_gene/ENSG00000198561.16/0_18*
-/rmats_long/results_by_gene/ENSG00000198561.16/0_19*
+/rmats_long/results_by_gene/ENSG00000198561.16/0_7*
+/rmats_long/results_by_gene/ENSG00000198561.16/0_8*
 /rmats_long/results_by_gene/ENSG00000204580.14/
 /rmats_long/results_by_gene/ENSG00000254732.2/
 /rmats_long/results_by_gene/ENSG00000288534.1/

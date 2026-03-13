@@ -124,6 +124,36 @@ class FilteredAsmsTest(tests.base_test.BaseTest):
         isoform.exons.append(tests.base_test.Region(1900, 2000))
         gene.isoforms.append(isoform)
 
+        # gene_2 has three isoforms.
+        # After SJs are filtered, a source to sink ASM has two isoforms.
+        gene = tests.base_test.Gene()
+        chrom.genes.append(gene)
+        gene.id = 'gene_2'
+
+        # transcript 1: 1
+        isoform = tests.base_test.Isoform()
+        isoform.id = '{}_t_1'.format(gene.id)
+        isoform.strand = '+'
+        isoform.exons.append(tests.base_test.Region(3100, 3200))
+        gene.isoforms.append(isoform)
+
+        # transcript 2: 2,3
+        isoform = tests.base_test.Isoform()
+        isoform.id = '{}_t_2'.format(gene.id)
+        isoform.strand = '+'
+        isoform.exons.append(tests.base_test.Region(3400, 3500))
+        isoform.exons.append(tests.base_test.Region(3700, 3800))
+        gene.isoforms.append(isoform)
+
+        # transcript 3: 4,5,6
+        isoform = tests.base_test.Isoform()
+        isoform.id = '{}_t_3'.format(gene.id)
+        isoform.strand = '+'
+        isoform.exons.append(tests.base_test.Region(4000, 4100))
+        isoform.exons.append(tests.base_test.Region(4300, 4400))
+        isoform.exons.append(tests.base_test.Region(4600, 4700))
+        gene.isoforms.append(isoform)
+
         self._gtf = os.path.join(self._input_dir, 'test.gtf')
         self._chrs = [chrom]
         tests.base_test.write_gtf(self._gtf, self._chrs)
@@ -218,6 +248,22 @@ class FilteredAsmsTest(tests.base_test.BaseTest):
         align_1357.chr_name = chr_1.name
         align_1357.match_to_isoform(iso_1357)
 
+        # gene_2
+        g2_iso_1 = chr_1.genes[1].isoforms[0]
+        g2_align_1 = tests.base_test.Alignment()
+        g2_align_1.chr_name = chr_1.name
+        g2_align_1.match_to_isoform(g2_iso_1)
+
+        g2_iso_23 = chr_1.genes[1].isoforms[1]
+        g2_align_23 = tests.base_test.Alignment()
+        g2_align_23.chr_name = chr_1.name
+        g2_align_23.match_to_isoform(g2_iso_23)
+
+        g2_iso_456 = chr_1.genes[1].isoforms[2]
+        g2_align_456 = tests.base_test.Alignment()
+        g2_align_456.chr_name = chr_1.name
+        g2_align_456.match_to_isoform(g2_iso_456)
+
         next_i = 0
         aligns = list()
         tests.base_test.append_copies(align_1234567, 10, aligns)
@@ -227,6 +273,9 @@ class FilteredAsmsTest(tests.base_test.BaseTest):
         tests.base_test.append_copies(align_134567, 10, aligns)
         tests.base_test.append_copies(align_13467, 10, aligns)
         tests.base_test.append_copies(align_1357, 10, aligns)
+        tests.base_test.append_copies(g2_align_1, 25, aligns)
+        tests.base_test.append_copies(g2_align_23, 25, aligns)
+        tests.base_test.append_copies(g2_align_456, 1, aligns)
         tests.base_test.write_sam(sample_1_1_sam, self._chrs, aligns, next_i)
         next_i += len(aligns)
         tests.base_test.write_sam(sample_1_2_sam, self._chrs, aligns, next_i)
@@ -239,6 +288,9 @@ class FilteredAsmsTest(tests.base_test.BaseTest):
         tests.base_test.append_copies(align_12467, 10, aligns)
         tests.base_test.append_copies(align_13457, 10, aligns)
         tests.base_test.append_copies(align_13567, 10, aligns)
+        tests.base_test.append_copies(g2_align_1, 25, aligns)
+        tests.base_test.append_copies(g2_align_23, 25, aligns)
+        tests.base_test.append_copies(g2_align_456, 1, aligns)
         tests.base_test.write_sam(sample_2_1_sam, self._chrs, aligns, next_i)
         next_i += len(aligns)
         tests.base_test.write_sam(sample_2_2_sam, self._chrs, aligns, next_i)
@@ -254,11 +306,16 @@ class FilteredAsmsTest(tests.base_test.BaseTest):
         skip_2_iso_id = '{}_1'.format(skip_2_id)
         inc_6_iso_id = '{}_0'.format(skip_6_id)
         skip_6_iso_id = '{}_1'.format(skip_6_id)
+        g2_event_i = '2'
+        g2_id = '{}_{}'.format(chr_id, g2_event_i)
+        g2_iso_1_id = '{}_0'.format(g2_id)
+        g2_iso_2_id = '{}_1'.format(g2_id)
         count_path = os.path.join(self._rmats_long_out, 'count.tsv')
         counts = self.parse_asm_counts(count_path)
-        self.assertEqual(
-            sorted(counts.keys()),
-            [inc_2_iso_id, skip_2_iso_id, inc_6_iso_id, skip_6_iso_id])
+        self.assertEqual(sorted(counts.keys()), [
+            inc_2_iso_id, skip_2_iso_id, inc_6_iso_id, skip_6_iso_id,
+            g2_iso_1_id, g2_iso_2_id
+        ])
         self.assertEqual(counts[inc_2_iso_id]['sample_1_1'], 30)
         self.assertEqual(counts[inc_2_iso_id]['sample_1_2'], 30)
         self.assertEqual(counts[inc_2_iso_id]['sample_2_1'], 20)
@@ -275,6 +332,14 @@ class FilteredAsmsTest(tests.base_test.BaseTest):
         self.assertEqual(counts[skip_6_iso_id]['sample_1_2'], 30)
         self.assertEqual(counts[skip_6_iso_id]['sample_2_1'], 20)
         self.assertEqual(counts[skip_6_iso_id]['sample_2_2'], 20)
+        self.assertEqual(counts[g2_iso_1_id]['sample_1_1'], 25)
+        self.assertEqual(counts[g2_iso_1_id]['sample_1_2'], 25)
+        self.assertEqual(counts[g2_iso_1_id]['sample_2_1'], 25)
+        self.assertEqual(counts[g2_iso_1_id]['sample_2_2'], 25)
+        self.assertEqual(counts[g2_iso_2_id]['sample_1_1'], 25)
+        self.assertEqual(counts[g2_iso_2_id]['sample_1_2'], 25)
+        self.assertEqual(counts[g2_iso_2_id]['sample_2_1'], 25)
+        self.assertEqual(counts[g2_iso_2_id]['sample_2_2'], 25)
 
         summary_txt_path = os.path.join(self._rmats_long_out, 'summary.txt')
         self.assert_exists(summary_txt_path)
@@ -291,6 +356,19 @@ class FilteredAsmsTest(tests.base_test.BaseTest):
         self.assertEqual(row['asm_id'], skip_6_id)
         self.assertAlmostEqual(float(row['delta_isoform_proportion']), -0.2)
         self.assertLess(float(row['adj_pvalue']), 0.05)
+
+        asms = self.parse_asm_definitions(self._event_dir)
+        exons_1 = ((3101, 3201), )
+        exons_23 = ((3401, 3501), (3701, 3801))
+        key = tuple(sorted([exons_1, exons_23]))
+        self.assertIn(key, asms)
+        asm = asms[key]
+        self.assertEqual(asm['event_type'], 'complex splicing')
+        self.assertEqual(asm['chr'], 'chr_1')
+        self.assertEqual(asm['strand'], '+')
+        self.assertEqual(asm['gene_id'], 'gene_2')
+        self.assertEqual(asm['isoforms'], list(key))
+        self.assertEqual(asm['is_strict'], 'True')
 
 
 if __name__ == '__main__':

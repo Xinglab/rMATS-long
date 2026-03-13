@@ -2,7 +2,6 @@ import os
 import os.path
 import shutil
 import subprocess
-import sys
 import time
 import unittest
 
@@ -218,14 +217,6 @@ def run_command(command, log=None, out=None, check=True):
     return process
 
 
-def get_python_executable():
-    exe = sys.executable
-    if not exe:
-        return 'python'
-
-    return exe
-
-
 def create_group_1_file(sample_names, dir_path):
     return create_group_file(sample_names, dir_path, '1')
 
@@ -250,23 +241,10 @@ def start_timer():
 
 class BaseTest(unittest.TestCase):
     def setUp(self):
-        self._python_exe = get_python_executable()
+        self._rmats_long_exe = 'rmats-long'
         self._base_test_dir = os.path.dirname(__file__)
         self._base_parent_dir = os.path.dirname(self._base_test_dir)
         self._script_dir = os.path.join(self._base_parent_dir, 'scripts')
-        self._rmats_long_py = os.path.join(self._script_dir, 'rmats_long.py')
-        self._clean_espresso_gtf_py = os.path.join(self._script_dir,
-                                                   'clean_espresso_gtf.py')
-        self._organize_gene_info_by_chr_py = os.path.join(
-            self._script_dir, 'organize_gene_info_by_chr.py')
-        self._organize_alignment_info_by_gene_and_chr_py = os.path.join(
-            self._script_dir, 'organize_alignment_info_by_gene_and_chr.py')
-        self._simplify_alignment_info_py = os.path.join(
-            self._script_dir, 'simplify_alignment_info.py')
-        self._detect_splicing_events_py = os.path.join(
-            self._script_dir, 'detect_splicing_events.py')
-        self._count_reads_for_asms_py = os.path.join(
-            self._script_dir, 'count_reads_for_asms.py')
 
     def assert_exists(self, path):
         if os.path.exists(path):
@@ -281,7 +259,7 @@ class BaseTest(unittest.TestCase):
 
     def run_clean_gtf(self, in_gtf, out_gtf, log_dir):
         command = [
-            self._python_exe, self._clean_espresso_gtf_py, '--in-gtf', in_gtf,
+            self._rmats_long_exe, 'clean_espresso_gtf.py', '--in-gtf', in_gtf,
             '--out-gtf', out_gtf
         ]
         log_path = os.path.join(log_dir, 'clean_gtf.log')
@@ -290,7 +268,7 @@ class BaseTest(unittest.TestCase):
     def run_organize_gtf(self, gtf, out_dir, log_dir):
         gtf_dir = os.path.join(out_dir, 'org_gtf')
         command = [
-            self._python_exe, self._organize_gene_info_by_chr_py, '--gtf', gtf,
+            self._rmats_long_exe, 'organize_gene_info_by_chr.py', '--gtf', gtf,
             '--out-dir', gtf_dir
         ]
         log_path = os.path.join(log_dir, 'organize_gtf.log')
@@ -307,7 +285,7 @@ class BaseTest(unittest.TestCase):
                     input_dir, '{}_{}_simplified.tsv'.format(sample, sam_i))
                 for_sample.append(out_path)
                 command = [
-                    self._python_exe, self._simplify_alignment_info_py,
+                    self._rmats_long_exe, 'simplify_alignment_info.py',
                     '--in-file', sam, '--out-tsv', out_path
                 ]
                 log_path = os.path.join(
@@ -327,7 +305,7 @@ class BaseTest(unittest.TestCase):
                     write_tsv_line(handle, [sample, tsv])
 
         command = [
-            self._python_exe, self._organize_alignment_info_by_gene_and_chr_py,
+            self._rmats_long_exe, 'organize_alignment_info_by_gene_and_chr.py',
             '--gtf-dir', gtf_dir, '--out-dir', align_dir, '--samples-tsv',
             samples_tsv
         ]
@@ -344,11 +322,12 @@ class BaseTest(unittest.TestCase):
                           max_nodes=None,
                           max_paths=None,
                           output_full_gene_asm=False,
+                          output_basic_events=False,
                           simplify_gene_isoform_endpoints=False,
                           filter_gene_isoforms_by_edge=False):
         event_dir = os.path.join(out_dir, 'events')
         command = [
-            self._python_exe, self._detect_splicing_events_py, '--gtf-dir',
+            self._rmats_long_exe, 'detect_splicing_events.py', '--gtf-dir',
             gtf_dir, '--out-dir', event_dir
         ]
 
@@ -367,6 +346,9 @@ class BaseTest(unittest.TestCase):
         if output_full_gene_asm:
             command.append('--output-full-gene-asm')
 
+        if output_basic_events:
+            command.append('--output-basic-events')
+
         if simplify_gene_isoform_endpoints:
             command.append('--simplify-gene-isoform-endpoints')
 
@@ -378,22 +360,22 @@ class BaseTest(unittest.TestCase):
         return event_dir
 
     def run_count_reads(self, gtf_dir, align_dir, event_dir, out_dir, log_dir):
-        asm_counts = os.path.join(out_dir, 'read_counts.tsv')
+        asm_counts_dir = os.path.join(out_dir, 'read_counts')
         command = [
-            self._python_exe, self._count_reads_for_asms_py, '--gtf-dir',
+            self._rmats_long_exe, 'count_reads_for_asms.py', '--gtf-dir',
             gtf_dir, '--event-dir', event_dir, '--align-dir', align_dir,
-            '--out-tsv', asm_counts
+            '--out-dir', asm_counts_dir
         ]
         log_path = os.path.join(log_dir, 'count_reads.log')
         run_command(command, log=log_path)
-        return asm_counts
+        return asm_counts_dir
 
     def run_rmats_long(self,
                        group_1,
                        group_2,
                        align_dir,
                        event_dir,
-                       asm_counts,
+                       asm_counts_dir,
                        out_dir,
                        log_dir,
                        gtf=None,
@@ -403,9 +385,10 @@ class BaseTest(unittest.TestCase):
                        average_reads_per_group=None):
         rmats_long_out = os.path.join(out_dir, 'rmats_long')
         command = [
-            self._python_exe, self._rmats_long_py, '--asm-counts', asm_counts,
-            '--event-dir', event_dir, '--align-dir', align_dir, '--group-1',
-            group_1, '--group-2', group_2, '--out-dir', rmats_long_out
+            self._rmats_long_exe, 'rmats_long.py', '--asm-counts-dir',
+            asm_counts_dir, '--event-dir', event_dir, '--align-dir', align_dir,
+            '--group-1', group_1, '--group-2', group_2, '--out-dir',
+            rmats_long_out
         ]
         if gtf:
             command.extend(['--gencode-gtf', gtf])
@@ -432,13 +415,12 @@ class BaseTest(unittest.TestCase):
         run_command(command, log=log_path)
         return rmats_long_out
 
-    def parse_read_compatibility(self, path):
-        counts = dict()
+    def _parse_read_compatibility_tsv(self, counts_tsv, counts):
         expected_headers = [
             'asm_id', 'gene_id', 'read_id', 'sample_id', 'isoform_id'
         ]
         gene_id = None
-        with open(path, 'rt') as handle:
+        with open(counts_tsv, 'rt') as handle:
             for line_i, line in enumerate(handle):
                 columns = read_tsv_line(line)
                 if line_i == 0:
@@ -451,8 +433,6 @@ class BaseTest(unittest.TestCase):
                 if (gene_id is None) or (row_gene not in ['', gene_id]):
                     gene_id = row_gene
 
-                asm = row['asm_id']
-                read = row['read_id']
                 sample = row['sample_id']
                 isoform = row['isoform_id']
                 by_sample = counts.get(isoform)
@@ -462,6 +442,13 @@ class BaseTest(unittest.TestCase):
 
                 old_count = by_sample.get(sample, 0)
                 by_sample[sample] = old_count + 1
+
+    def parse_read_compatibility(self, dir_path):
+        counts = dict()
+        file_names = os.listdir(dir_path)
+        for name in file_names:
+            counts_tsv = os.path.join(dir_path, name)
+            self._parse_read_compatibility_tsv(counts_tsv, counts)
 
         return counts
 

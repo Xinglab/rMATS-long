@@ -2,6 +2,7 @@ import unittest
 
 import tests.asm_detection.test as asm_detection_test
 import tests.asm_read_counts.test as asm_read_counts_test
+import tests.basic_events.test as basic_events_test
 import tests.filtered_asms.test as filtered_asms_test
 import tests.gene_isoforms.test as gene_isoforms_test
 import tests.isoform_diffs.test as isoform_diffs_test
@@ -16,6 +17,7 @@ def build_test_suite():
     suite = unittest.TestSuite()
     suite.addTest(loader.loadTestsFromModule(asm_detection_test))
     suite.addTest(loader.loadTestsFromModule(asm_read_counts_test))
+    suite.addTest(loader.loadTestsFromModule(basic_events_test))
     suite.addTest(loader.loadTestsFromModule(filtered_asms_test))
     suite.addTest(loader.loadTestsFromModule(gene_isoforms_test))
     suite.addTest(loader.loadTestsFromModule(isoform_diffs_test))

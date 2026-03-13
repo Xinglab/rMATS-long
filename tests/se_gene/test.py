@@ -103,7 +103,7 @@ class SkippedExonGeneTest(tests.base_test.BaseTest):
 
     def _run_rmats_long(self):
         command = [
-            self._python_exe, self._rmats_long_py, '--abundance',
+            self._rmats_long_exe, 'rmats_long.py', '--abundance',
             self._abundance, '--updated-gtf', self._gtf, '--group-1',
             self._group_1, '--group-2', self._group_2, '--out-dir',
             self._out_dir

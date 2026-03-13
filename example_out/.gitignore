@@ -1,7 +1,7 @@
 /*_simplified.tsv
 /alignments/
 /annotation/
-/asm_counts.tsv
+/asm_counts/
 /combined.gtf
 /espresso_cleaned.gtf
 /events/
@@ -15,12 +15,13 @@
 /rmats_long/results_by_gene/*/*_cpm_and_proportion.tsv
 /rmats_long/results_by_gene/*/*_in_gene.png
 /rmats_long/results_by_gene/*/*_isoform_differences_*_to_*.tsv
+/rmats_long/results_by_gene/*/*_simple_graph.png
 /rmats_long/results_by_gene/*/*_sj_counts.png
 /rmats_long/results_by_gene/*/filtered.gtf
 /rmats_long/results_by_gene/*/isoform_count_by_asm.tsv
 /rmats_long/results_by_gene/ENSG00000070882.13/
 /rmats_long/results_by_gene/ENSG00000074410.14/
-/rmats_long/results_by_gene/ENSG00000198561.16/
+/rmats_long/results_by_gene/ENSG00000204580.14/
 /rmats_long/results_by_gene/ENSG00000288534.1/
 /rmats_long/summary.txt
 /rmats_long/summary_plot.pdf
