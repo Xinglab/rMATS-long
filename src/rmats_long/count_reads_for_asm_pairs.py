@@ -32,7 +32,7 @@ def parse_args():
                         help='how many threads to use')
     parser.add_argument('--max-isoforms-per-asm',
                         type=int,
-                        help='how many threads to use')
+                        help='consider ASMs with at most this many isoforms')
 
     args = parser.parse_args()
     return args

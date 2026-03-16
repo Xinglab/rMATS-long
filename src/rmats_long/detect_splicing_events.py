@@ -723,14 +723,12 @@ def detect_basic_events_at_node(node, strand, nodes_to_visit, bubbles):
         return
 
     is_minus_strand = strand == '-'
-    # SE
     if node.node_type == 'end':
         upstream_end = node
         detect_se_events_with_up_end(upstream_end, is_minus_strand, bubbles)
         detect_mxe_events_with_up_end(upstream_end, is_minus_strand, bubbles)
         detect_a3ss_events_with_up_end(upstream_end, is_minus_strand, bubbles)
 
-    # A5SS
     if node.node_type == 'start':
         upstream_start = node
         detect_a5ss_events_with_up_start(upstream_start, is_minus_strand,
