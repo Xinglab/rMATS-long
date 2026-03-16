@@ -4,9 +4,8 @@ build-backend = 'setuptools.build_meta'
 
 [project]
 name = 'rmats-long'
-version = '2.0.0'
+version = '2.0.1'
 dependencies = [
-  'Cython>=3.2',
   'matplotlib>=3.7',
   'networkx>=2.8',
   'numpy>=1.24',
