@@ -3,6 +3,8 @@
 [![Latest Release](https://img.shields.io/github/release/Xinglab/rMATS-long.svg?label=Latest%20Release)](https://github.com/Xinglab/rMATS-long/releases/latest)
 [![Total GitHub Downloads](https://img.shields.io/github/downloads/Xinglab/rMATS-long/total.svg?label=Total%20GitHub%20Downloads)](https://github.com/Xinglab/rMATS-long/releases)
 [![Total Bioconda Installs](https://img.shields.io/conda/dn/bioconda/rmats-long.svg?label=Total%20Bioconda%20Installs)](https://anaconda.org/bioconda/rmats-long)
+[![Total Docker Pulls](https://img.shields.io/docker/pulls/xinglab/rmats-long.svg?label=Total%20Docker%20Pulls)](https://hub.docker.com/r/xinglab/rmats-long)
+[![PyPI Installs](https://img.shields.io/pypi/dm/rmats-long.svg?label=PyPI%20Installs)](https://pypi.org/project/rmats-long/)
 
 ## About
 
@@ -51,6 +53,8 @@ conda install -c conda-forge -c bioconda rmats-long
 ```
 
 In either case, when the conda environment is activated the scripts can be run with `rmats-long` and the name of the script. For example: `rmats-long rmats_long.py --help`
+
+The PyPI package can be installed with `pip`, but non-Python dependencies will need to be installed separately
 
 * [Python](https://www.python.org/) (v3.11.15)
   + [NetworkX](https://networkx.org/) (v2.8.8)
