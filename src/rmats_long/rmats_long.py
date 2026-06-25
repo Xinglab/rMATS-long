@@ -1050,8 +1050,10 @@ def summarize_classification(summary, out_tsv):
 def write_summary(summary, summary_path, use_unadjusted_pvalue, command_line,
                   commit_id):
     is_asm = summary.get('significant_asms') is not None
+    now_string = rmats_long_utils.get_current_time_string()
     with open(summary_path, 'wt') as handle:
         handle.write('## {}\n'.format(command_line))
+        handle.write('## {}\n'.format(now_string))
         handle.write('## source code commit: {}\n'.format(commit_id))
         handle.write('## significant differential isoform usage\n')
         handle.write('total significant isoforms: {}\n'.format(
@@ -1171,6 +1173,64 @@ def load_gene_id_to_name(chr_id, gtf_dir):
             gene_id_to_name[gene_id] = gene_name
 
     return gene_id_to_name
+
+
+def add_gene_name_column_with_handles(gtf_dir, in_handle, out_handle):
+    gene_id_to_name = None
+    gene_id_to_name_chr_id = None
+    for line_i, line in enumerate(in_handle):
+        columns = rmats_long_utils.read_tsv_line(line)
+        if line_i == 0:
+            has_gene_name = 'gene_name' in columns
+            has_gene_id = 'gene_id' in columns
+            has_asm_id = 'asm_id' in columns
+            if has_gene_name or (not (has_gene_id and has_asm_id)):
+                return False
+
+            gene_id_i = columns.index('gene_id')
+            asm_id_i = columns.index('asm_id')
+            gene_name_i = gene_id_i + 1
+            columns.insert(gene_name_i, 'gene_name')
+            rmats_long_utils.write_tsv_line(out_handle, columns)
+            continue
+
+        asm_id = columns[asm_id_i]
+        gene_id = columns[gene_id_i]
+        parsed_asm_id = rmats_long_utils.parse_asm_id(asm_id)
+        chr_id = parsed_asm_id['chr']
+        if chr_id != gene_id_to_name_chr_id:
+            gene_id_to_name_chr_id = chr_id
+            gene_id_to_name = load_gene_id_to_name(chr_id, gtf_dir)
+
+        gene_name = gene_id_to_name.get(gene_id, '')
+        columns.insert(gene_name_i, gene_name)
+        rmats_long_utils.write_tsv_line(out_handle, columns)
+
+    return True
+
+
+def add_gene_name_column(gtf_dir, path):
+    work_dir = os.path.dirname(path)
+    with open(path, 'rt') as in_handle:
+        with tempfile.NamedTemporaryFile('wt',
+                                         prefix='gene_name_',
+                                         suffix='.tsv',
+                                         dir=work_dir,
+                                         delete=False) as out_handle:
+            tmp_path = out_handle.name
+            added = add_gene_name_column_with_handles(gtf_dir, in_handle,
+                                                      out_handle)
+
+    if added:
+        shutil.move(tmp_path, path)
+    else:
+        os.remove(tmp_path)
+
+
+def add_gene_name_columns(gtf_dir, asms_path, transcripts_path,
+                          filt_transcripts_path):
+    for path in [asms_path, transcripts_path, filt_transcripts_path]:
+        add_gene_name_column(gtf_dir, path)
 
 
 def write_abundance_for_asm_id(asm_id, asm_id_str, temp_dir, samples,
@@ -2362,6 +2422,12 @@ def rmats_long(args):
     else:
         filtered_diff_transcripts_path = os.path.join(
             args.out_dir, 'differential_transcripts_filtered.tsv')
+
+    if args.gtf_dir:
+        diff_asms_path = os.path.join(args.out_dir, 'differential_asms.tsv')
+        add_gene_name_columns(args.gtf_dir, diff_asms_path,
+                              diff_transcripts_path,
+                              filtered_diff_transcripts_path)
 
     summarize_differential_transcripts(summary, filtered_diff_transcripts_path,
                                        args.adj_pvalue, args.delta_proportion,

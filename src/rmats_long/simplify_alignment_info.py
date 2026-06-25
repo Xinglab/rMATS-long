@@ -26,15 +26,6 @@ def parse_args():
     return parser.parse_args()
 
 
-def create_sjs_string(sjs):
-    strings = list()
-    for start, end in sjs:
-        sj = '{}-{}'.format(start, end)
-        strings.append(sj)
-
-    return ','.join(strings)
-
-
 def parse_sam_flag(flag_str):
     flag = int(flag_str)
     # bin returns a string that starts with 0b
@@ -111,7 +102,7 @@ def simplify_alignment(line):
     coord_details = get_end_and_sjs_from_cigar(start, cigar)
     end = coord_details['end']
     sjs = coord_details['sjs']
-    sjs_string = create_sjs_string(sjs)
+    sjs_string = rmats_long_utils.create_sjs_string(sjs)
     return [chr_name, str(start), str(end), sjs_string, strand]
 
 
@@ -155,10 +146,30 @@ def sort_by_chr(in_path, buffer_size):
         shutil.move(tmp_path, in_path)
 
 
+def index_by_chr(path):
+    index_path = '{}.index'.format(path)
+    current_chr = None
+    with open(index_path, 'wt') as index_handle:
+        with open(path, 'rt') as in_handle:
+            offset = in_handle.tell()
+            line = in_handle.readline()
+            while line:
+                columns = rmats_long_utils.read_tsv_line(line)
+                chr_name = columns[0]
+                if chr_name != current_chr:
+                    current_chr = chr_name
+                    out_columns = [chr_name, str(offset)]
+                    rmats_long_utils.write_tsv_line(index_handle, out_columns)
+
+                offset = in_handle.tell()
+                line = in_handle.readline()
+
+
 def main():
     args = parse_args()
     simplify_alignment_info(args.in_file, args.out_tsv)
     sort_by_chr(args.out_tsv, args.sort_buffer_size)
+    index_by_chr(args.out_tsv)
     print('simplify_alignment_info.py finished')
 
 

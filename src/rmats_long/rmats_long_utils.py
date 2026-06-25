@@ -1,3 +1,4 @@
+import datetime
 import importlib
 import importlib.resources
 import math
@@ -75,6 +76,15 @@ def get_graph_file_path(dir_path, chr_id):
     return os.path.join(dir_path, 'graph_{}.txt'.format(chr_id))
 
 
+def all_sjs_prefix():
+    return 'all_sjs_'
+
+
+def get_all_sjs_path(dir_path, chr_id):
+    prefix = all_sjs_prefix()
+    return os.path.join(dir_path, '{}{}.tsv'.format(prefix, chr_id))
+
+
 def find_gene_graph_in_graph_file(gene_id, path):
     found_gene = False
     graph_lines = list()
@@ -100,10 +110,20 @@ def find_gene_graph_in_graph_file(gene_id, path):
 
 
 def get_chr_id_from_path(path):
-    name = os.path.basename(path)
     # name is like chr_id_{}.tsv
     prefix = 'chr_id_'
     suffix = '.tsv'
+    return get_chr_id_from_path_with_prefix_and_suffix(path, prefix, suffix)
+
+
+def get_chr_id_from_all_sjs_path(path):
+    prefix = all_sjs_prefix()
+    suffix = '.tsv'
+    return get_chr_id_from_path_with_prefix_and_suffix(path, prefix, suffix)
+
+
+def get_chr_id_from_path_with_prefix_and_suffix(path, prefix, suffix):
+    name = os.path.basename(path)
     if not (name.startswith(prefix) and name.endswith(suffix)):
         raise Exception('Unexpected format for {}'.format(path))
 
@@ -142,6 +162,26 @@ def parse_asm_id(asm_id):
     return {'chr': chr_id, 'event_i': event_i}
 
 
+def parse_asm_isoform_id(isoform_id):
+    parts = isoform_id.split('_')
+    if len(parts) != 3:
+        raise Exception(
+            'could not parse ASM isoform_id: {}'.format(isoform_id))
+
+    asm_id = '_'.join(parts[:2])
+    isoform_i = int(parts[2])
+    return {'asm': asm_id, 'isoform_i': isoform_i}
+
+
+def create_sjs_string(sjs):
+    strings = list()
+    for start, end in sjs:
+        sj = '{}-{}'.format(start, end)
+        strings.append(sj)
+
+    return ','.join(strings)
+
+
 def parse_sjs_string(sjs_string):
     sjs = list()
     if not sjs_string:
@@ -157,6 +197,34 @@ def parse_sjs_string(sjs_string):
     return sjs
 
 
+def format_isoforms_str_from_exons(isoforms):
+    isoform_strs = list()
+    for isoform in isoforms:
+        coord_strs = list()
+        for exon in isoform:
+            start, end = exon
+            coord_strs.append(str(start))
+            coord_strs.append(str(end))
+
+        isoform_str = ','.join(coord_strs)
+        isoform_strs.append(isoform_str)
+
+    return ';'.join(isoform_strs)
+
+
+def format_isoforms_str(isoforms):
+    isoform_strs = list()
+    for isoform in isoforms:
+        coord_strs = list()
+        for coord in isoform:
+            coord_strs.append(str(coord))
+
+        isoform_str = ','.join(coord_strs)
+        isoform_strs.append(isoform_str)
+
+    return ';'.join(isoform_strs)
+
+
 def parse_isoforms_str(isoforms_str):
     isoforms = list()
     parts = isoforms_str.split(';')
@@ -170,6 +238,10 @@ def parse_isoforms_str(isoforms_str):
         isoforms.append(isoform)
 
     return isoforms
+
+
+def format_isoform_ids_str(isoform_id_strs):
+    return ';'.join(isoform_id_strs)
 
 
 def parse_isoform_ids_str(isoform_ids_str):
@@ -669,6 +741,7 @@ class HandleAndNextLine:
     def __init__(self, handle):
         self.handle = handle
         self.next_line = None
+        self.offset = self.handle.tell()
 
     def read_line(self):
         if self.next_line is not None:
@@ -678,6 +751,7 @@ class HandleAndNextLine:
         return self.next_line
 
     def clear_line(self):
+        self.offset = self.handle.tell()
         self.next_line = None
 
     def clear_and_read_line(self):
@@ -689,3 +763,10 @@ def get_file_size(path):
     stat_result = os.stat(path)
     size_in_bytes = stat_result.st_size
     return size_in_bytes
+
+
+def get_current_time_string():
+    format_str = '%Y-%m-%dT%H:%M:%S'
+    now = datetime.datetime.now()
+    time_str = now.strftime(format_str)
+    return time_str

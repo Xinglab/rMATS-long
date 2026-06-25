@@ -1,4 +1,5 @@
 import argparse
+import heapq
 import multiprocessing
 import os
 import os.path
@@ -176,9 +177,11 @@ def create_isoform_details(isoforms, start, end, strand, start_always_ss,
         coords = list()
         details = {'coords': coords}
         isoform_details.append(details)
+        num_sjs = -1
         is_exon_start = True
         for coordinate in isoform:
             if is_exon_start:
+                num_sjs += 1
                 coord_type = 'exon_start'
                 is_exon_start = False
             else:
@@ -189,9 +192,13 @@ def create_isoform_details(isoforms, start, end, strand, start_always_ss,
 
         coords[0]['type'] = start_type
         coords[-1]['type'] = end_type
+        details['num_sjs'] = num_sjs
 
     return isoform_details
 
+
+CompatResult = cython.struct(is_compat=cython.bint,
+                             all_isoform_sjs_matched=cython.bint)
 
 Int64Pair = cython.typedef(int64_t[2])
 SpliceJunction = cython.typedef(Int64Pair)
@@ -407,7 +414,8 @@ IsoformPositionDetails = cython.struct(
     coord_i=int64_t,
     pos=int64_t,
     coord_type=CoordTypeEnumValueType,
-    num_coords=cython.size_t)
+    num_coords=cython.size_t,
+    num_sjs=cython.size_t)
 p_IsoformPositionDetails = cython.typedef(
     cython.pointer[IsoformPositionDetails])
 pp_IsoformPositionDetails = cython.typedef(
@@ -420,6 +428,7 @@ def isoform_position_details_init(isoform: dict) -> IsoformPositionDetails:
     isoform_coords: list
     isoform_coord: dict
     num_coords: cython.size_t
+    num_sjs: cython.size_t
     malloc_size: cython.size_t
     coords: cython.pointer[int64_t]
     coord_types: cython.pointer[CoordTypeEnumValueType]
@@ -428,6 +437,7 @@ def isoform_position_details_init(isoform: dict) -> IsoformPositionDetails:
     coord_type: CoordTypeEnumValueType
     isoform_coords = isoform['coords']
     num_coords = len(isoform_coords)
+    num_sjs = isoform['num_sjs']
     malloc_size = num_coords * cython.sizeof(int64_t)
     coords = cython.cast(cython.pointer[int64_t], malloc(malloc_size))
     if coords is cython.NULL:
@@ -452,7 +462,7 @@ def isoform_position_details_init(isoform: dict) -> IsoformPositionDetails:
     pos = coords[coord_i]
     coord_type = coord_types[coord_i]
     return IsoformPositionDetails(coords, coord_types, coord_i, pos,
-                                  coord_type, num_coords)
+                                  coord_type, num_coords, num_sjs)
 
 
 @cython.cfunc
@@ -619,21 +629,32 @@ def check_end_boundary(
 @cython.exceptval(check=True)
 def is_read_compatible_with_isoform(
         p_read_pos_details: p_ReadPositionDetails,
-        p_isoform_pos_details: p_IsoformPositionDetails) -> cython.bint:
+        p_isoform_pos_details: p_IsoformPositionDetails) -> CompatResult:
+    result: CompatResult
     had_overlap: cython.bint
     start_boundary_is_ok: cython.bint
+    initial_sj_match_i: int64_t
+    final_sj_match_i: int64_t
+    num_matched_sjs: int64_t
     is_boundary_ok: cython.bint
     read_position_details_reset(p_read_pos_details)
     isoform_position_details_reset(p_isoform_pos_details)
+    result = CompatResult(False, False)
     had_overlap = find_read_isoform_initial_overlap(p_read_pos_details,
                                                     p_isoform_pos_details)
     if not had_overlap:
-        return False
+        return result
 
     start_boundary_is_ok = check_start_boundary(p_read_pos_details,
                                                 p_isoform_pos_details)
     if not start_boundary_is_ok:
-        return False
+        return result
+
+    # Determine the earliest sj_i that hasn't been reached yet.
+    # This handles sj_i and i_within_sj being -1 at the read start.
+    initial_sj_match_i = p_read_pos_details.sj_i
+    if p_read_pos_details.i_within_sj != 0:
+        initial_sj_match_i += 1
 
     # The read and isoform coordinates have been advanced until the first overlap.
     # If only one is at an exon start then advance it to the exon end.
@@ -653,9 +674,15 @@ def is_read_compatible_with_isoform(
         read_position_details_advance(p_read_pos_details)
         isoform_position_details_advance(p_isoform_pos_details)
 
+    final_sj_match_i = p_read_pos_details.sj_i - 1
+    num_matched_sjs = (final_sj_match_i - initial_sj_match_i) + 1
+    result.all_isoform_sjs_matched = (
+        num_matched_sjs == p_isoform_pos_details.num_sjs)
+
     is_boundary_ok = check_end_boundary(p_read_pos_details,
                                         p_isoform_pos_details)
-    return is_boundary_ok
+    result.is_compat = is_boundary_ok
+    return result
 
 
 # A read_id from the original alignment/fastq can appear in multiple genes.
@@ -663,26 +690,33 @@ def is_read_compatible_with_isoform(
 # {read_i} for each gene.
 @cython.cfunc
 @cython.exceptval(check=True)
-def count_read_for_asm(gene_id, read_i, sample,
+def count_read_for_asm(gene_id, read_id, sample,
                        p_read_pos_details: p_ReadPositionDetails, asm,
                        isoform_pos_details_for_asm: p_IsoformPositionDetails,
+                       all_sjs_count_by_asm_by_isoform: dict,
                        out_handle) -> cython.void:
     p_isoform_pos_details: p_IsoformPositionDetails
+    compat_result: CompatResult
     asm_id = asm['asm_id']
     parsed = rmats_long_utils.parse_asm_id(asm_id)
     asm_i = parsed['event_i']
+    by_isoform = rmats_long_utils.try_get_or_set_default(
+        all_sjs_count_by_asm_by_isoform, asm_id, dict())
     isoform_ids = asm['isoform_ids']
     # The last column is the isoform ID
-    out_columns = [str(asm_i), str(read_i), gene_id, sample, None]
+    out_columns = [str(asm_i), read_id, gene_id, sample, None]
     for isoform_i, isoform_id in enumerate(isoform_ids):
         p_isoform_pos_details = cython.address(
             isoform_pos_details_for_asm[isoform_i])
-        is_match = is_read_compatible_with_isoform(p_read_pos_details,
-                                                   p_isoform_pos_details)
-        if is_match:
+        compat_result = is_read_compatible_with_isoform(
+            p_read_pos_details, p_isoform_pos_details)
+        if compat_result.is_compat:
             isoform_id = isoform_ids[isoform_i]
             out_columns[4] = isoform_id
             rmats_long_utils.write_tsv_line(out_handle, out_columns)
+            if compat_result.all_isoform_sjs_matched:
+                old_count = by_isoform.get(isoform_id, 0)
+                by_isoform[isoform_id] = old_count + 1
 
 
 @cython.cfunc
@@ -735,7 +769,8 @@ def free_isoform_objects_for_asms(
 
 
 def count_reads_for_gene_with_handles(gene_i, gene_id, asms, align_handle,
-                                      out_handle):
+                                      out_handle, all_sjs_handle):
+    all_sjs_count_by_asm_by_isoform = dict()
     # IsoformPositionDetails[][]
     isoform_pos_details_for_asms: pp_IsoformPositionDetails
     isoform_pos_details_for_asm: p_IsoformPositionDetails
@@ -765,14 +800,26 @@ def count_reads_for_gene_with_handles(gene_i, gene_id, asms, align_handle,
         read_pos_details = read_position_details_init(start, end, sjs)
         p_read_pos_details = cython.address(read_pos_details)
         # strand = columns[6]
+        if len(columns) == 8:
+            read_id = columns[7]
+        else:
+            read_id = str(read_i)
+
         for asm_i, asm in enumerate(asms):
             isoform_pos_details_for_asm = isoform_pos_details_for_asms[asm_i]
-            count_read_for_asm(gene_id, read_i, sample, p_read_pos_details,
-                               asm, isoform_pos_details_for_asm, out_handle)
+            count_read_for_asm(gene_id, read_id, sample, p_read_pos_details,
+                               asm, isoform_pos_details_for_asm,
+                               all_sjs_count_by_asm_by_isoform, out_handle)
 
         read_position_details_free(p_read_pos_details)
 
     free_isoform_objects_for_asms(asms, isoform_pos_details_for_asms)
+    for asm_id, by_isoform in all_sjs_count_by_asm_by_isoform.items():
+        parsed_asm_id = rmats_long_utils.parse_asm_id(asm_id)
+        asm_i = parsed_asm_id['event_i']
+        for isoform, count in by_isoform.items():
+            out_columns = [str(asm_i), isoform, str(count)]
+            rmats_long_utils.write_tsv_line(all_sjs_handle, out_columns)
 
 
 def get_out_files_by_basename(thread_dirs):
@@ -798,34 +845,54 @@ def get_asm_i_from_out_line(line):
     return asm_i
 
 
-def update_next_asm_i_and_line(next_asm_i_and_line, handle):
-    line = handle.readline()
-    if not line:
-        asm_i = None
-        line = None
-    else:
+class HandleWithNextAsmAndLine:
+    def __init__(self, handle):
+        self.handle = handle
+        self.asm_i = None
+        self.line = None
+        self.update_next_asm_and_line()
+
+    def update_next_asm_and_line(self):
+        line = self.handle.readline()
+        if not line:
+            self.asm_i = None
+            self.line = None
+            return
+
         asm_i = get_asm_i_from_out_line(line)
+        self.asm_i = asm_i
+        self.line = line
 
-    next_asm_i_and_line['asm_i'] = asm_i
-    next_asm_i_and_line['line'] = line
+    def __lt__(self, other):
+        # None is treated as the highest value.
+        # None will be last in the heap.
+        if self.asm_i is None:
+            return False
+
+        if other.asm_i is None:
+            return True
+
+        return self.asm_i < other.asm_i
 
 
-def initialize_next_asm_i_and_line(paths, in_handles,
-                                   next_asm_i_and_line_by_handle):
-    initial_asm_i = None
+def initialize_handle_heap_by_asm_i(paths, handle_heap_by_asm_i, all_handles):
     for path in paths:
         handle = open(path, 'rt')
-        in_handles.append(handle)
-        next_asm_i_and_line = dict()
-        next_asm_i_and_line_by_handle.append(next_asm_i_and_line)
-        update_next_asm_i_and_line(next_asm_i_and_line, handle)
-        asm_i = next_asm_i_and_line['asm_i']
-        if initial_asm_i is None:
-            initial_asm_i = asm_i
-        elif (asm_i is not None) and (asm_i < initial_asm_i):
-            initial_asm_i = asm_i
+        all_handles.append(handle)
+        handle_with_next = HandleWithNextAsmAndLine(handle)
+        handle_heap_by_asm_i.append(handle_with_next)
 
-    return initial_asm_i
+    heapq.heapify(handle_heap_by_asm_i)
+
+
+def output_updated_all_sjs_tsv_line(chr_i, line, out_handle):
+    in_columns = rmats_long_utils.read_tsv_line(line)
+    asm_i = in_columns[0]
+    isoform = in_columns[1]
+    count = in_columns[2]
+    asm_id = '{}_{}'.format(chr_i, asm_i)
+    out_columns = [asm_id, isoform, count]
+    rmats_long_utils.write_tsv_line(out_handle, out_columns)
 
 
 def output_updated_tsv_line(chr_i, line, previous_gene_id, out_handle):
@@ -846,55 +913,45 @@ def output_updated_tsv_line(chr_i, line, previous_gene_id, out_handle):
     return previous_gene_id
 
 
-def combine_out_files_for_chr(chr_i, paths, out_handle):
-    in_handles = list()
-    next_asm_i_and_line_by_handle = list()
-    previous_asm_i = None
+def combine_out_files_for_chr(chr_i, paths, is_all_sjs, out_handle):
+    handle_heap_by_asm_i = list()
+    all_handles = list()
     previous_gene_id = None
     try:
-        initial_asm_i = initialize_next_asm_i_and_line(
-            paths, in_handles, next_asm_i_and_line_by_handle)
-        if initial_asm_i is None:
+        initialize_handle_heap_by_asm_i(paths, handle_heap_by_asm_i,
+                                        all_handles)
+        if not all_handles:
             return
 
-        previous_asm_i = initial_asm_i - 1
-        any_progress = True
-        while any_progress:
-            any_progress = False
-            lowest_next_asm_i = None
-            for handle_i, handle in enumerate(in_handles):
-                next_asm_i_and_line = next_asm_i_and_line_by_handle[handle_i]
-                while True:
-                    asm_i = next_asm_i_and_line['asm_i']
-                    line = next_asm_i_and_line['line']
-                    # Keep writing for previous_asm_i, or start the next asm_i
-                    if (asm_i is None) or (asm_i > (previous_asm_i + 1)):
-                        break
-
-                    previous_asm_i = asm_i
-                    lowest_next_asm_i = asm_i
+        handle_with_next = heapq.heappop(handle_heap_by_asm_i)
+        while handle_with_next.asm_i is not None:
+            asm_i = handle_with_next.asm_i
+            previous_asm_i = asm_i
+            # Keep writing for previous_asm_i, or start the next asm_i
+            while (asm_i is not None) and (asm_i <= (previous_asm_i + 1)):
+                line = handle_with_next.line
+                if is_all_sjs:
+                    output_updated_all_sjs_tsv_line(chr_i, line, out_handle)
+                else:
                     previous_gene_id = output_updated_tsv_line(
                         chr_i, line, previous_gene_id, out_handle)
-                    update_next_asm_i_and_line(next_asm_i_and_line, handle)
 
-                handle_asm_i = next_asm_i_and_line['asm_i']
-                if lowest_next_asm_i is None:
-                    lowest_next_asm_i = handle_asm_i
-                elif (handle_asm_i is not None) and (handle_asm_i
-                                                     < lowest_next_asm_i):
-                    lowest_next_asm_i = handle_asm_i
+                previous_asm_i = asm_i
+                handle_with_next.update_next_asm_and_line()
+                asm_i = handle_with_next.asm_i
 
-            if lowest_next_asm_i is not None:
-                previous_asm_i = lowest_next_asm_i - 1
-                any_progress = True
-
+            handle_with_next = heapq.heappushpop(handle_heap_by_asm_i,
+                                                 handle_with_next)
     finally:
-        for handle in in_handles:
+        for handle in all_handles:
             handle.close()
 
 
 def combine_out_files_thread(thread_inputs):
-    headers = ['asm_id', 'gene_id', 'read_id', 'sample_id', 'isoform_id']
+    compat_headers = [
+        'asm_id', 'gene_id', 'read_id', 'sample_id', 'isoform_id'
+    ]
+    all_sjs_headers = ['asm_id', 'isoform_id', 'all_sjs_matched_count']
     while True:
         arguments = rmats_long_utils.try_get_from_queue_with_short_wait(
             thread_inputs)
@@ -903,10 +960,16 @@ def combine_out_files_thread(thread_inputs):
 
         chr_i = arguments['chr_i']
         paths = arguments['paths']
+        is_all_sjs = arguments['is_all_sjs']
         out_path = arguments['out_path']
+        if is_all_sjs:
+            headers = all_sjs_headers
+        else:
+            headers = compat_headers
+
         with open(out_path, 'wt') as out_handle:
             rmats_long_utils.write_tsv_line(out_handle, headers)
-            combine_out_files_for_chr(chr_i, paths, out_handle)
+            combine_out_files_for_chr(chr_i, paths, is_all_sjs, out_handle)
 
 
 def combine_out_files(writer_thread_infos, num_threads, out_dir):
@@ -919,10 +982,21 @@ def combine_out_files(writer_thread_infos, num_threads, out_dir):
     num_jobs = len(out_files_by_basename)
     threads = list()
     thread_inputs = multiprocessing.Queue(num_jobs)
+    all_sjs_prefix = rmats_long_utils.all_sjs_prefix()
     for basename, paths in out_files_by_basename.items():
-        chr_i = rmats_long_utils.get_chr_id_from_path(basename)
         out_path = os.path.join(out_dir, basename)
-        arguments = {'chr_i': chr_i, 'paths': paths, 'out_path': out_path}
+        is_all_sjs = basename.startswith(all_sjs_prefix)
+        if is_all_sjs:
+            chr_i = rmats_long_utils.get_chr_id_from_all_sjs_path(basename)
+        else:
+            chr_i = rmats_long_utils.get_chr_id_from_path(basename)
+
+        arguments = {
+            'chr_i': chr_i,
+            'paths': paths,
+            'is_all_sjs': is_all_sjs,
+            'out_path': out_path
+        }
         thread_inputs.put(arguments)
 
     for _ in range(num_threads):
@@ -1018,38 +1092,55 @@ def get_offset_for_gene(gene_id, align_index_path, align_index_by_path):
 
 
 def count_reads_for_gene(gene_i, gene_id, asms, align_path, align_index_path,
-                         align_index_by_path, out_path, out_paths):
+                         align_index_by_path, out_path, out_paths,
+                         all_sjs_path, all_sjs_paths):
     offset = get_offset_for_gene(gene_id, align_index_path,
                                  align_index_by_path)
     if offset is None:
         return
 
     out_paths.add(out_path)
+    all_sjs_paths.add(all_sjs_path)
     with open(align_path, 'rt') as align_handle:
         align_handle.seek(offset)
         with open(out_path, 'at') as out_handle:
-            count_reads_for_gene_with_handles(gene_i, gene_id, asms,
-                                              align_handle, out_handle)
+            with open(all_sjs_path, 'at') as all_sjs_handle:
+                count_reads_for_gene_with_handles(gene_i, gene_id, asms,
+                                                  align_handle, out_handle,
+                                                  all_sjs_handle)
 
 
-def sort_file_by_asm_and_read(sort_buffer_size, out_path):
+def sort_file_by_keys(sort_buffer_size, keys, out_path):
     tmp_dir = os.path.dirname(out_path)
     tmp_path = '{}.tmp'.format(out_path)
-    asm_key_arg = '-k1,1g'
-    read_key_arg = '-k2,2g'
     env = {'LC_ALL': 'C'}  # to ensure sort order
     command = [
         'sort', '--buffer-size', sort_buffer_size, '--temporary-directory',
-        tmp_dir, asm_key_arg, read_key_arg, '--output', tmp_path, out_path
+        tmp_dir, '--output', tmp_path, out_path
     ]
+    command.extend(keys)
     subprocess.run(command, env=env, check=True)
 
     shutil.move(tmp_path, out_path)
 
 
+def sort_file_by_asm(sort_buffer_size, out_path):
+    asm_key_arg = '-k1,1g'
+    keys = [asm_key_arg]
+    sort_file_by_keys(sort_buffer_size, keys, out_path)
+
+
+def sort_file_by_asm_and_read(sort_buffer_size, out_path):
+    asm_key_arg = '-k1,1g'
+    read_key_arg = '-k2,2g'
+    keys = [asm_key_arg, read_key_arg]
+    sort_file_by_keys(sort_buffer_size, keys, out_path)
+
+
 def process_and_write_results_thread_main(writer_queues, work_dir):
     expected_signals = len(writer_queues)
     out_paths = set()
+    all_sjs_paths = set()
     align_index_by_path = dict()
     while True:
         all_empty = True
@@ -1061,7 +1152,10 @@ def process_and_write_results_thread_main(writer_queues, work_dir):
             if len(arguments) == 0:
                 expected_signals -= 1
                 if expected_signals == 0:
-                    return out_paths
+                    return {
+                        'out_paths': out_paths,
+                        'all_sjs_paths': all_sjs_paths
+                    }
 
                 continue
 
@@ -1070,12 +1164,14 @@ def process_and_write_results_thread_main(writer_queues, work_dir):
             gene_id = arguments['gene_id']
             gene_i = arguments['gene_i']
             align_path = arguments['align_path']
+            chr_id = rmats_long_utils.get_chr_id_from_path(align_path)
             align_index_path = '{}.index'.format(align_path)
-            basename = os.path.basename(align_path)
-            out_path = os.path.join(work_dir, basename)
+            out_path = rmats_long_utils.get_chr_file_path(work_dir, chr_id)
+            all_sjs_path = rmats_long_utils.get_all_sjs_path(work_dir, chr_id)
             count_reads_for_gene(gene_i, gene_id, asms, align_path,
                                  align_index_path, align_index_by_path,
-                                 out_path, out_paths)
+                                 out_path, out_paths, all_sjs_path,
+                                 all_sjs_paths)
 
         if all_empty:
             time.sleep(1)  # 1 second
@@ -1084,9 +1180,15 @@ def process_and_write_results_thread_main(writer_queues, work_dir):
 def process_and_write_results_thread(sort_buffer_size, writer_queues,
                                      work_dir):
     os.makedirs(work_dir)
-    out_paths = process_and_write_results_thread_main(writer_queues, work_dir)
+    out_details = process_and_write_results_thread_main(
+        writer_queues, work_dir)
+    out_paths = out_details['out_paths']
+    all_sjs_paths = out_details['all_sjs_paths']
     for out_path in out_paths:
         sort_file_by_asm_and_read(sort_buffer_size, out_path)
+
+    for all_sjs_path in all_sjs_paths:
+        sort_file_by_asm(sort_buffer_size, all_sjs_path)
 
 
 def get_file_info_for_chrs(event_dir, align_dir, gtf_dir):
@@ -1257,6 +1359,7 @@ def main():
     rmats_long_utils.create_output_dir(out_dir)
     count_reads_for_asms(event_dir, align_dir, gtf_dir, args.num_threads,
                          args.sort_buffer_size, out_dir)
+    rmats_long_utils.copy_chr_name_mapping(gtf_dir, out_dir)
     print('count_reads_for_asms.py finished')
 
 

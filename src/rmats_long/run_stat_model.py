@@ -1,5 +1,4 @@
 import argparse
-import datetime
 import math
 import multiprocessing
 import os
@@ -17,16 +16,32 @@ import rpy2.rinterface_lib.embedded
 from rmats_long import rmats_long_utils
 
 
+def import_r_packages():
+    packages = dict()
+    packages['mclogit'] = rpy2.robjects.packages.importr('mclogit')
+    packages['base'] = rpy2.robjects.packages.importr('base')
+    packages['stats'] = rpy2.robjects.packages.importr('stats')
+    return packages
+
+
 # `import rpy2.robjects` initializes an instance of R.
 # The import is not done at the top of the file so that each
 # process can initialize its own R instance.
 def initialize_rpy2_instance():
     import rpy2.robjects
     import rpy2.robjects.packages
+
+    packages = import_r_packages()
+    # Set warnings to be printed immediately instead of held until the end.
+    # This allows capturing the warning output for specific calls
+    packages['base'].options(warn=1)
+
     # The mblogit() function uses BLAS library calls which may try
     # to use all available CPUs. Since run_stat_model.py already creates
     # threads, limit each BLAS call to only 1 thread.
     threadpoolctl.threadpool_limits(limits=1)
+
+    return packages
 
 
 def parse_args():
@@ -141,14 +156,6 @@ def parse_args():
     return args
 
 
-def import_r_packages():
-    packages = dict()
-    packages['mclogit'] = rpy2.robjects.packages.importr('mclogit')
-    packages['base'] = rpy2.robjects.packages.importr('base')
-    packages['stats'] = rpy2.robjects.packages.importr('stats')
-    return packages
-
-
 def create_append_to_list_func(target):
     def append_to(x):
         target.append(x)
@@ -182,9 +189,7 @@ def restore_r_output_callbacks(result):
 
 
 def print_with_timestamp(message, flush=True):
-    format_str = '%Y-%m-%dT%H:%M:%S'
-    now = datetime.datetime.now()
-    time_str = now.strftime(format_str)
+    time_str = rmats_long_utils.get_current_time_string()
     formatted = '[{}] {}'.format(time_str, message)
     print(formatted, flush=flush)
 
@@ -294,9 +299,10 @@ def write_output_headers(out_handles):
     rmats_long_utils.write_tsv_line(
         out_handles['coeff'],
         ['asm_id', 'gene_id', 'isoform_id', 'lr', 'df', 'p_value'])
-    rmats_long_utils.write_tsv_line(
-        out_handles['lrtp'],
-        ['asm_id', 'gene_id', 'lrt_p', 'lr', 'df', 'converge', 'iter', 'eps'])
+    rmats_long_utils.write_tsv_line(out_handles['lrtp'], [
+        'asm_id', 'gene_id', 'lrt_p', 'lr', 'df', 'converge', 'iter', 'eps',
+        'percent_ambiguous_reads'
+    ])
     rmats_long_utils.write_tsv_line(out_handles['error'],
                                     ['asm_id', 'gene_id', 'error'])
     rmats_long_utils.write_tsv_line(out_handles['warn'],
@@ -434,22 +440,28 @@ def create_formulas(var, covars, data_frame, response, r_packages):
 
 def initialize_single_isoform_totals(single_isoform, total_single_by_isoform,
                                      counts_by_sample):
+    total_single = 0
     for sample, by_isoform in single_isoform.items():
         count_by_isoform = rmats_long_utils.try_get_or_set_default(
             counts_by_sample, sample, dict())
         for isoform, count in by_isoform.items():
+            total_single += count
             old_total = total_single_by_isoform.get(isoform, 0)
             total_single_by_isoform[isoform] = old_total + count
             old_count = count_by_isoform.get(isoform, 0)
             count_by_isoform[isoform] = old_count + count
 
+    return total_single
+
 
 def initialize_multi_isoform_totals(multi_isoform, total_multi_by_isoform,
                                     counts_by_sample):
+    total_multi = 0
     for sample, by_isoform in multi_isoform.items():
         count_by_isoform = rmats_long_utils.try_get_or_set_default(
             counts_by_sample, sample, dict())
         for isoforms, count in by_isoform.items():
+            total_multi += count
             num_isoforms = len(isoforms)
             count_per = count / num_isoforms
             for isoform in isoforms:
@@ -458,21 +470,34 @@ def initialize_multi_isoform_totals(multi_isoform, total_multi_by_isoform,
                 old_count = count_by_isoform.get(isoform, 0)
                 count_by_isoform[isoform] = old_count + count_per
 
+    return total_multi
+
 
 def initialize_counts(single_isoform, multi_isoform):
     total_single_by_isoform = dict()
     total_multi_by_isoform = dict()
     counts_by_sample = dict()
-    initialize_single_isoform_totals(single_isoform, total_single_by_isoform,
-                                     counts_by_sample)
-    initialize_multi_isoform_totals(multi_isoform, total_multi_by_isoform,
-                                    counts_by_sample)
+    total_single = initialize_single_isoform_totals(single_isoform,
+                                                    total_single_by_isoform,
+                                                    counts_by_sample)
+    total_multi = initialize_multi_isoform_totals(multi_isoform,
+                                                  total_multi_by_isoform,
+                                                  counts_by_sample)
 
     totals = {
         'total_single_by_isoform': total_single_by_isoform,
         'total_multi_by_isoform': total_multi_by_isoform
     }
-    return {'counts_by_sample': counts_by_sample, 'totals': totals}
+    if total_multi == 0:
+        percent_ambiguous = 0
+    else:
+        percent_ambiguous = total_multi / (total_single + total_multi)
+
+    return {
+        'counts_by_sample': counts_by_sample,
+        'totals': totals,
+        'percent_ambiguous': percent_ambiguous
+    }
 
 
 def distribute_counts_with_all_estimated(isoforms, combo_count, prop_total,
@@ -587,6 +612,14 @@ def select_top_n_isoforms_by_proportion(props_by_sample,
     return top_isoforms
 
 
+def add_covars_to_data_dict(covar_vectors, data_dict):
+    for name, values in covar_vectors.items():
+        num_unique = len(set(values))
+        if num_unique >= 2:
+            vector = convert_covar_to_vector(values)
+            data_dict[name] = vector
+
+
 def create_model_data_frame(min_count, limit_asm_to_top_n_isoforms,
                             sample_to_group, covars, isoform_order,
                             counts_and_props, r_packages):
@@ -656,12 +689,7 @@ def create_model_data_frame(min_count, limit_asm_to_top_n_isoforms,
         'count': counts_vector,
         'group': groups_vector
     }
-    for name, values in covar_vectors.items():
-        num_unique = len(set(values))
-        if num_unique >= 2:
-            vector = convert_covar_to_vector(values)
-            data_dict[name] = vector
-
+    add_covars_to_data_dict(covar_vectors, data_dict)
     data = rpy2.robjects.DataFrame(data_dict)
 
     return {
@@ -676,13 +704,80 @@ def create_model_data_frame(min_count, limit_asm_to_top_n_isoforms,
     }
 
 
+def run_glm(num_groups, formula, data, r_packages):
+    if num_groups < 2:
+        return {'error': 'Less than 2 groups: {}'.format(num_groups)}
+
+    # suppress warning message:
+    # In eval(family$initialize) : non-integer counts in a binomial glm!
+    capture_details = capture_r_output()
+    fit = r_packages['stats'].glm(formula,
+                                  family=r_packages['stats'].binomial,
+                                  data=data)
+    restore_r_output_callbacks(capture_details)
+    return {'error': None, 'fit': fit}
+
+
+def create_data_frame_and_run_glm_for_two_isoforms(sample_to_group, covars,
+                                                   samples, isoforms, counts,
+                                                   formula, r_packages):
+    unique_isoforms = sorted(set(isoforms))
+    isoform_1 = unique_isoforms[0]
+    isoform_2 = unique_isoforms[1]
+    values_by_sample = dict()
+    covar_names = covars['names']
+    covar_by_sample = covars['by_sample']
+    for row_i, sample in enumerate(samples):
+        isoform = isoforms[row_i]
+        count = counts[row_i]
+        values_for_sample = values_by_sample.get(sample)
+        if not values_for_sample:
+            values_for_sample = dict()
+            values_by_sample[sample] = values_for_sample
+
+        values_for_sample[isoform] = count
+
+    sample_list = list()
+    iso1_list = list()
+    iso2_list = list()
+    group_list = list()
+    covar_vectors = dict()
+    for name in covar_names:
+        covar_vectors[name] = list()
+
+    for sample, values in values_by_sample.items():
+        sample_list.append(sample)
+        iso1_value = values.get(isoform_1, 0)
+        iso2_value = values.get(isoform_2, 0)
+        iso1_list.append(iso1_value)
+        iso2_list.append(iso2_value)
+        group = sample_to_group[sample]
+        group_list.append(group)
+        sample_covars = covar_by_sample.get(sample)
+        if sample_covars:
+            for name, value in sample_covars.items():
+                covar_vectors[name].append(value)
+
+    data_dict = {
+        'sample_id': rpy2.robjects.StrVector(sample_list),
+        'iso1': rpy2.robjects.FloatVector(iso1_list),
+        'iso2': rpy2.robjects.FloatVector(iso2_list),
+        'group': rpy2.robjects.StrVector(group_list)
+    }
+    add_covars_to_data_dict(covar_vectors, data_dict)
+    data = rpy2.robjects.DataFrame(data_dict)
+    num_groups = len(set(group_list))
+    glm_results = run_glm(num_groups, formula, data, r_packages)
+    return glm_results
+
+
 def run_mblogit(isoform_levels,
                 groups,
                 formula,
                 data,
                 weights,
                 r_packages,
-                dispersion=True):
+                dispersion=False):
     num_isoforms = len(isoform_levels)
     if num_isoforms < 2:
         return {'error': 'Less than 2 isoforms: {}'.format(num_isoforms)}
@@ -718,13 +813,24 @@ def fit_model(min_count, limit_asm_to_top_n_isoforms, sample_to_group, var,
     counts = model_df['counts']
     isoform_levels = model_df['isoform_levels']
     groups = model_df['groups']
-    formulas = create_formulas(var, covars, data, 'isoform_id', r_packages)
-    mblogit_result = run_mblogit(isoform_levels, groups, formulas['full'],
+    if len(isoform_levels) == 2:
+        formulas = create_formulas(var, covars, data, 'cbind(iso1, iso2)',
+                                   r_packages)
+        fit_result = create_data_frame_and_run_glm_for_two_isoforms(
+            sample_to_group, covars, model_df['samples'], model_df['isoforms'],
+            model_df['counts'], formulas['full'], r_packages)
+    else:
+        formulas = create_formulas(var, covars, data, 'isoform_id', r_packages)
+        fit_result = run_mblogit(isoform_levels, groups, formulas['full'],
                                  data, counts, r_packages)
-    if mblogit_result['error']:
-        return {'error': mblogit_result['error'], 'warn': model_df['warn']}
+    if fit_result['error']:
+        return {
+            'error': fit_result['error'],
+            'warn': model_df['warn'],
+            'model_df': model_df
+        }
 
-    fit = mblogit_result['fit']
+    fit = fit_result['fit']
     return {
         'error': None,
         'warn': model_df['warn'],
@@ -733,19 +839,26 @@ def fit_model(min_count, limit_asm_to_top_n_isoforms, sample_to_group, var,
     }
 
 
-def calculate_p_value(var, covars, fit, model_df, r_packages):
+def calculate_p_value(sample_to_group, var, covars, fit, model_df, r_packages):
     data = model_df['data']
     counts = model_df['counts']
     isoform_levels = model_df['isoform_levels']
     groups = model_df['groups']
 
-    formulas = create_formulas(var, covars, data, 'isoform_id', r_packages)
-    mblogit_result = run_mblogit(isoform_levels, groups, formulas['null'],
+    if len(isoform_levels) == 2:
+        formulas = create_formulas(var, covars, data, 'cbind(iso1, iso2)',
+                                   r_packages)
+        fit_result = create_data_frame_and_run_glm_for_two_isoforms(
+            sample_to_group, covars, model_df['samples'], model_df['isoforms'],
+            model_df['counts'], formulas['null'], r_packages)
+    else:
+        formulas = create_formulas(var, covars, data, 'isoform_id', r_packages)
+        fit_result = run_mblogit(isoform_levels, groups, formulas['null'],
                                  data, counts, r_packages)
-    if mblogit_result['error']:
-        return {'error': mblogit_result['error']}
+    if fit_result['error']:
+        return {'error': fit_result['error']}
 
-    null_fit = mblogit_result['fit']
+    null_fit = fit_result['fit']
     stats = get_stats_from_full_and_null_fits(fit, null_fit, r_packages)
     return {
         'error': None,
@@ -814,8 +927,8 @@ def get_or_initialize_isoform_details(covar_names, details_by_isoform,
     details = {
         'samples': list(),
         'groups': list(),
-        'counts': list(),
-        'is_isoform': list()
+        'iso_counts': list(),
+        'remaining_counts': list()
     }
     covar_vectors = dict()
     for name in covar_names:
@@ -832,10 +945,10 @@ def get_or_set_sample_default(default_by_sample, sample, group, total):
         return sample_default
 
     sample_default = {
-        'samples': [sample],
-        'groups': [group],
-        'counts': [total],
-        'is_isoform': ['n'],
+        'samples': sample,
+        'groups': group,
+        'iso_counts': 0,
+        'remaining_counts': total,
         'covars': dict()
     }
     default_by_sample[sample] = sample_default
@@ -870,18 +983,18 @@ def get_isoform_details_and_set_counts(covar_names, covar_by_sample,
         sample_default = get_or_set_sample_default(default_by_sample, sample,
                                                    group, total)
 
-        details['samples'].extend([sample, sample])
-        details['groups'].extend([group, group])
-        details['counts'].extend([count, remaining_count])
-        details['is_isoform'].extend(['y', 'n'])
+        details['samples'].append(sample)
+        details['groups'].append(group)
+        details['iso_counts'].append(count)
+        details['remaining_counts'].append(remaining_count)
         covar_vectors = details['covars']
         sample_covars = covar_by_sample.get(sample)
         if not sample_covars:
             continue
 
         for name, value in sample_covars.items():
-            covar_vectors[name].extend([value, value])
-            sample_default['covars'][name] = [value]
+            covar_vectors[name].append(value)
+            sample_default['covars'][name] = value
 
 
 def create_isoform_data_frames(details_by_isoform, default_by_sample):
@@ -889,32 +1002,27 @@ def create_isoform_data_frames(details_by_isoform, default_by_sample):
     for isoform, details in details_by_isoform.items():
         for sample, default in default_by_sample.items():
             if sample not in details['samples']:
-                details['samples'].extend(default['samples'])
-                details['groups'].extend(default['groups'])
-                details['counts'].extend(default['counts'])
-                details['is_isoform'].extend(default['is_isoform'])
+                details['samples'].append(default['samples'])
+                details['groups'].append(default['groups'])
+                details['iso_counts'].append(default['iso_counts'])
+                details['remaining_counts'].append(default['remaining_counts'])
                 for name, values in details['covars'].items():
-                    values.extend(default['covars'][name])
+                    values.append(default['covars'][name])
 
         samples_vector = rpy2.robjects.StrVector(details['samples'])
         groups_vector = rpy2.robjects.StrVector(details['groups'])
-        counts_vector = rpy2.robjects.FloatVector(details['counts'])
-        is_isoform_vector = rpy2.robjects.StrVector(
-            details['is_isoform']).factor()
+        iso1_vector = rpy2.robjects.FloatVector(details['iso_counts'])
+        iso2_vector = rpy2.robjects.FloatVector(details['remaining_counts'])
         data_dict = {
             'sample_id': samples_vector,
-            'group': groups_vector,
-            'count': counts_vector,
-            'is_isoform': is_isoform_vector
+            'iso1': iso1_vector,
+            'iso2': iso2_vector,
+            'group': groups_vector
         }
-        for name, values in details['covars'].items():
-            num_unique = len(set(values))
-            if num_unique >= 2:
-                vector = convert_covar_to_vector(values)
-                data_dict[name] = vector
-
+        add_covars_to_data_dict(details['covars'], data_dict)
         data = rpy2.robjects.DataFrame(data_dict)
-        df_by_isoform[isoform] = data
+        num_groups = len(set(details['groups']))
+        df_by_isoform[isoform] = {'data_frame': data, 'num_groups': num_groups}
 
     return df_by_isoform
 
@@ -953,33 +1061,67 @@ def get_stats_from_full_and_null_fits(fit, null_fit, r_packages):
     return {'p_value': p_value, 'lr': lr, 'df': df}
 
 
-def test_isoform_proportions(var, covars, model_df, counts, coefficients,
-                             r_packages):
+def set_em_counts_without_fitting_model(model_df, counts):
+    model_counts = model_df['counts']
+    model_samples = model_df['samples']
+    model_isoforms = model_df['isoforms']
+    total_by_sample = get_total_by_sample_from_model_counts(
+        model_counts, model_samples)
+    for count_i, count in enumerate(model_counts):
+        sample = model_samples[count_i]
+        isoform = model_isoforms[count_i]
+        total = total_by_sample[sample]
+        if total == 0:
+            continue
+
+        prop = count / total
+        counts.append({
+            'sample_id': sample,
+            'isoform_id': isoform,
+            'count': count,
+            'prop': prop
+        })
+
+
+def test_isoform_proportions(var, covars, model_df, asm_lr, asm_df,
+                             asm_p_value, counts, coefficients, r_packages):
     df_by_isoform = create_isoform_data_frames_and_set_counts(
         model_df, counts, covars)
-    for isoform, data_frame in df_by_isoform.items():
+
+    # The isoform level test uses the count of one isoform against the
+    # combined counts of all other isoforms. If there are only two
+    # isoforms in the ASM then the test is the same as at the ASM
+    # level.
+    is_only_two_isoforms = len(model_df['isoform_levels']) == 2
+    for isoform, df_details in df_by_isoform.items():
+        if is_only_two_isoforms:
+            coefficients.append({
+                'isoform_id': isoform,
+                'lr': asm_lr,
+                'df': asm_df,
+                'p_value': asm_p_value
+            })
+            continue
+
         error_result = {'isoform_id': isoform, 'lr': 0, 'df': 0, 'p_value': 1}
-        formulas = create_formulas(var, covars, data_frame, 'is_isoform',
-                                   r_packages)
-        isoform_levels = data_frame.rx2('is_isoform')
-        groups = data_frame.rx2('group')
-        weights = data_frame.rx2('count')
-        full_mblogit_result = run_mblogit(isoform_levels, groups,
-                                          formulas['full'], data_frame,
-                                          weights, r_packages)
-        if full_mblogit_result['error']:
+        data_frame = df_details['data_frame']
+        num_groups = df_details['num_groups']
+        formulas = create_formulas(var, covars, data_frame,
+                                   'cbind(iso1, iso2)', r_packages)
+        full_glm_result = run_glm(num_groups, formulas['full'], data_frame,
+                                  r_packages)
+        if full_glm_result['error']:
             coefficients.append(error_result)
             continue
 
-        null_mblogit_result = run_mblogit(isoform_levels, groups,
-                                          formulas['null'], data_frame,
-                                          weights, r_packages)
-        if null_mblogit_result['error']:
+        fit = full_glm_result['fit']
+        null_glm_result = run_glm(num_groups, formulas['null'], data_frame,
+                                  r_packages)
+        if null_glm_result['error']:
             coefficients.append(error_result)
             continue
 
-        fit = full_mblogit_result['fit']
-        null_fit = null_mblogit_result['fit']
+        null_fit = null_glm_result['fit']
         stats = get_stats_from_full_and_null_fits(fit, null_fit, r_packages)
         coefficients.append({
             'isoform_id': isoform,
@@ -1061,7 +1203,12 @@ def run_stat_model_on_asm(asm_id, gene_id, read_grouping, min_count,
 
     counts = list()
     coefficients = list()
-    converge = {'iter': None, 'converged': None, 'delta': None}
+    converge = {
+        'iter': None,
+        'converged': None,
+        'delta': None,
+        'percent_ambiguous': 0
+    }
     warnings = list()
     results = {
         'asm_id': asm_id,
@@ -1082,19 +1229,11 @@ def run_stat_model_on_asm(asm_id, gene_id, read_grouping, min_count,
     single_isoform = read_grouping['single']
     multi_isoform = read_grouping['multi']
     num_isoforms = len(isoforms)
-    if num_isoforms < 2:
-        results['error'] = 'Less than 2 isoforms: {}'.format(num_isoforms)
-        return results
-
-    min_reads_error = check_min_asm_reads(single_isoform, multi_isoform,
-                                          min_asm_reads_by_sample)
-    if min_reads_error:
-        results['error'] = min_reads_error
-        return results
 
     init_result = initialize_counts(single_isoform, multi_isoform)
     counts_by_sample = init_result['counts_by_sample']
     init_totals = init_result['totals']
+    converge['percent_ambiguous'] = init_result['percent_ambiguous']
     isoform_order = determine_isoform_order(init_totals)
     props_by_sample = init_props(counts_by_sample)
     counts_and_props = {
@@ -1105,19 +1244,48 @@ def run_stat_model_on_asm(asm_id, gene_id, read_grouping, min_count,
         run_em_iterations(tolerance, max_iter, single_isoform, multi_isoform,
                           counts_and_props, converge)
 
+    error = None
+    if num_isoforms < 2:
+        error = 'Less than 2 isoforms: {}'.format(num_isoforms)
+    else:
+        error = check_min_asm_reads(single_isoform, multi_isoform,
+                                    min_asm_reads_by_sample)
+
+    if error:
+        model_df = create_model_data_frame(min_count,
+                                           limit_asm_to_top_n_isoforms,
+                                           sample_to_group, covars,
+                                           isoform_order, counts_and_props,
+                                           r_packages)
+        warnings.extend(model_df['warn'])
+        new_error = model_df['error']
+        if new_error:
+            error = '{}; {}'.format(error, new_error)
+        else:
+            set_em_counts_without_fitting_model(model_df, counts)
+
+        results['error'] = error
+        return results
+
     fit_results = fit_model(min_count, limit_asm_to_top_n_isoforms,
                             sample_to_group, var, covars, isoform_order,
                             counts_and_props, r_packages)
-    warnings.extend(fit_results.get('warn', list()))
+    warnings.extend(fit_results['warn'])
     if fit_results['error']:
         results['error'] = fit_results['error']
+        model_df = fit_results.get('model_df')
+        if model_df:
+            set_em_counts_without_fitting_model(model_df, counts)
+
         return results
 
     fit = fit_results['fit']
     model_df = fit_results['model_df']
-    p_value_result = calculate_p_value(var, covars, fit, model_df, r_packages)
+    p_value_result = calculate_p_value(sample_to_group, var, covars, fit,
+                                       model_df, r_packages)
     if p_value_result['error']:
         results['error'] = p_value_result['error']
+        set_em_counts_without_fitting_model(model_df, counts)
         return results
 
     p_value = p_value_result['p_value']
@@ -1127,8 +1295,8 @@ def run_stat_model_on_asm(asm_id, gene_id, read_grouping, min_count,
     results['LRT_p']['lr'] = lr
     results['LRT_p']['df'] = df
 
-    test_isoform_proportions(var, covars, model_df, counts, coefficients,
-                             r_packages)
+    test_isoform_proportions(var, covars, model_df, lr, df, p_value, counts,
+                             coefficients, r_packages)
     return results
 
 
@@ -1156,7 +1324,7 @@ def escape_newlines(string):
 def write_results(results, out_handles):
     asm_id = results['asm_id']
     gene_id = results['gene_id']
-    if results.get('warn'):
+    if results['warn']:
         formatted = ';'.join(results['warn'])
         rmats_long_utils.write_tsv_line(out_handles['warn'],
                                         [asm_id, gene_id, formatted])
@@ -1165,7 +1333,6 @@ def write_results(results, out_handles):
         escaped = escape_newlines(results['error'])
         rmats_long_utils.write_tsv_line(out_handles['error'],
                                         [asm_id, gene_id, escaped])
-        return
 
     count_handle = out_handles['count']
     for count_row in results['count']:
@@ -1187,17 +1354,15 @@ def write_results(results, out_handles):
     lrtp_handle = out_handles['lrtp']
     conv_results = results['converge']
     lrtp_results = results['LRT_p']
-    p_value = lrtp_results['p_value']
-    lr = lrtp_results['lr']
-    df = lrtp_results['df']
     rmats_long_utils.write_tsv_line(lrtp_handle, [
         asm_id, gene_id,
-        rmats_long_utils.format_float(p_value),
-        rmats_long_utils.format_float(lr),
-        rmats_long_utils.format_float(df),
+        rmats_long_utils.format_float(lrtp_results['p_value']),
+        rmats_long_utils.format_float(lrtp_results['lr']),
+        rmats_long_utils.format_float(lrtp_results['df']),
         format_bool(conv_results['converged']),
         rmats_long_utils.format_float(conv_results['iter']),
-        rmats_long_utils.format_float(conv_results['delta'])
+        rmats_long_utils.format_float(conv_results['delta']),
+        rmats_long_utils.format_float(conv_results['percent_ambiguous'])
     ])
 
 
@@ -1253,8 +1418,7 @@ def run_stat_model_thread(min_count, limit_asm_to_top_n_isoforms,
                           min_asm_reads_by_sample, tolerance, max_iter, seed,
                           sample_to_group, covars, in_queue, out_queue,
                           signal_queue):
-    initialize_rpy2_instance()
-    r_packages = import_r_packages()
+    r_packages = initialize_rpy2_instance()
 
     while True:
         signal = rmats_long_utils.try_get_from_queue_without_wait(signal_queue)
@@ -1361,8 +1525,7 @@ def run_stat_model_with_out_handles(counts_dir, abundance, covars,
     out_queue = thread_details['out_queue']
     signal_queue = thread_details['signal_queue']
 
-    initialize_rpy2_instance()
-    r_packages = import_r_packages()
+    r_packages = initialize_rpy2_instance()
 
     write_output_headers(out_handles)
     if threads:
@@ -1475,10 +1638,14 @@ def process_counts_tsv(counts_tsv, all_samples, status_counts, on_asm_handler,
 
 def process_counts_dir(counts_dir, all_samples, status_counts, on_asm_handler,
                        status_handler):
-    # counts_dir has files like chr_id_{chr_i}.tsv
-    file_names = os.listdir(counts_dir)
-    for name in file_names:
-        counts_tsv = os.path.join(counts_dir, name)
+    chr_id_mapping = rmats_long_utils.parse_chr_mapping(counts_dir)
+    id_to_chr = chr_id_mapping['id_to_chr']
+    chr_ids = sorted(id_to_chr)
+    for chr_id in chr_ids:
+        counts_tsv = rmats_long_utils.get_chr_file_path(counts_dir, chr_id)
+        if not os.path.exists(counts_tsv):
+            continue
+
         with open(counts_tsv, 'rt') as handle:
             process_counts_tsv(counts_tsv, all_samples, status_counts,
                                on_asm_handler, status_handler, handle)
@@ -1671,8 +1838,7 @@ def adjust_isoform_p_values(coeff_path, differential_isoforms_path,
 
 def calculate_adjusted_p_values(coeff_path, lrtp_path, differential_asms_path,
                                 differential_isoforms_path):
-    initialize_rpy2_instance()
-    r_packages = import_r_packages()
+    r_packages = initialize_rpy2_instance()
     adjust_asm_p_values(lrtp_path, differential_asms_path, r_packages)
     adjust_isoform_p_values(coeff_path, differential_isoforms_path, r_packages)
 

@@ -1,2 +1,2 @@
-r-bslib=0.7.*
-r-shiny=1.8.*
+r-bslib=0.10.*
+r-shiny=1.13.*

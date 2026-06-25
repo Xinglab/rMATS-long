@@ -19,6 +19,7 @@ rMATS-long is an integrated computational workflow for long-read RNA-seq data. U
     - [Starting From Quantified Isoforms](#starting-from-quantified-isoforms)
   + [Alternative Splicing Module Analysis](#alternative-splicing-module-analysis)
   + [Snakemake](#snakemake)
+  + [Comparing Multiple Groups](#comparing-multiple-groups)
   + [Shiny](#shiny)
   + [Examples](#examples)
     - [Creating an input GTF](#creating-an-input-gtf)
@@ -42,6 +43,7 @@ rMATS-long is an integrated computational workflow for long-read RNA-seq data. U
     - [plot_simple_splice_graph.py](#plot_simple_splice_graphpy)
     - [create_gtf_from_asm_definitions.py](#create_gtf_from_asm_definitionspy)
     - [run_stat_model.py](#run_stat_modelpy)
+    - [check_asm_coupling.py](#check_asm_couplingpy)
 
 ## Dependencies
 
@@ -62,21 +64,23 @@ The PyPI package can be installed with `pip`, but non-Python dependencies will n
   + [pandas](https://pandas.pydata.org/) (v2.0.3)
   + [matplotlib](https://matplotlib.org/) (v3.7.3)
   + [pydot](https://github.com/pydot/pydot) (v3.0.4)
-  + [rpy2](https://github.com/rpy2/rpy2) (v3.5.11)
+  + [rpy2](https://github.com/rpy2/rpy2) (v3.6.7)
   + [threadpoolctl](https://github.com/joblib/threadpoolctl) (v3.6.0)
-  + [Cython](https://cython.org/) (v3.2.4)
-* [R](https://www.r-project.org/) (v4.2.3)
-  + [BiocParallel](https://bioconductor.org/packages/release/bioc/html/BiocParallel.html) (v1.32.5)
-  + [DRIMSeq](https://bioconductor.org/packages/release/bioc/html/DRIMSeq.html) (v1.26.0)
-  + [ggplot2](https://ggplot2.tidyverse.org/) (v3.4.4)
-  + [cowplot](https://wilkelab.org/cowplot/index.html) (v1.1.3)
-  + [ggrepel](https://ggrepel.slowkow.com/) (v0.9.5)
-  + [ggVennDiagram](https://github.com/gaospecial/ggVennDiagram) (v1.5.2)
-  + [this.path](https://github.com/ArcadeAntics/this.path) (v2.4.0)
-  + [mclogit](https://github.com/melff/mclogit/) (v0.9.6)
+  + [Cython](https://cython.org/) (v3.2.6)
+* [R](https://www.r-project.org/) (v4.5.3)
+  + [BiocParallel](https://bioconductor.org/packages/release/bioc/html/BiocParallel.html) (v1.44.0)
+  + [DRIMSeq](https://bioconductor.org/packages/release/bioc/html/DRIMSeq.html) (v1.38.0)
+  + [ggplot2](https://ggplot2.tidyverse.org/) (v3.5.2)
+  + [cowplot](https://wilkelab.org/cowplot/index.html) (v1.2.0)
+  + [ggrepel](https://ggrepel.slowkow.com/) (v0.9.8)
+  + [ggVennDiagram](https://github.com/gaospecial/ggVennDiagram) (v1.5.7)
+  + [this.path](https://github.com/ArcadeAntics/this.path) (v2.7.1)
+  + [mclogit](https://github.com/melff/mclogit/) (v0.9.15)
+  + [emmeans](https://github.com/rvlenth/emmeans) (v2.0.3)
+  + [lme4](https://github.com/lme4/lme4) (v1.1-38)
 * [samtools](https://www.htslib.org/) (v1.22.1)
 * [GCC](https://gcc.gnu.org/) (v15.2.0)
-* Optional dependencies for creating a GTF with [long-read-rna-seq-pipeline](https://github.com/RNA-ROB/long-read-rna-seq-pipeline):
+* Optional dependencies for creating a GTF with [AMALGAM](https://github.com/RNA-ROB/amalgam):
   + [gffcompare](https://github.com/gpertea/gffcompare) (v0.12.6)
   + [pysam](https://github.com/pysam-developers/pysam) (v0.23.3)
   + [pytabix](https://github.com/slowkow/pytabix) (v0.1)
@@ -92,7 +96,7 @@ An individual test can be run by supplying the path to the `test.py` file: `./ru
 
 ## Usage
 
-rMATS-long can analyze full-length isoforms or alternative splicing modules (ASMs). Full-length isoforms are quantified from long-read data using the code in [src/rmats_long/](src/rmats_long/) ([Differential Isoform Analysis](#differential-isoform-analysis)). Another option is to detect ASMs from the full-length isoforms and quantify those ASM isoforms ([Alternative Splicing Module Analysis](#alternative-splicing-module-analysis)). Significant changes in isoform usage are detected and visualizations are created. An annotation file with full-length isoforms is required as input. The isoform definitions can be from any source, for example [long-read-rna-seq-pipeline](https://github.com/RNA-ROB/long-read-rna-seq-pipeline). The analysis can be restricted to the basic splicing event types used in [rMATS turbo](https://github.com/Xinglab/rmats-turbo) ([Basic Events Example](#basic-events-example)).
+rMATS-long can analyze full-length isoforms or alternative splicing modules (ASMs). Full-length isoforms are quantified from long-read data using the code in [src/rmats_long/](src/rmats_long/) ([Differential Isoform Analysis](#differential-isoform-analysis)). Another option is to detect ASMs from the full-length isoforms and quantify those ASM isoforms ([Alternative Splicing Module Analysis](#alternative-splicing-module-analysis)). Significant changes in isoform usage are detected and visualizations are created. An annotation file with full-length isoforms is required as input. The isoform definitions can be from any source, for example [AMALGAM](https://github.com/RNA-ROB/amalgam). The analysis can be restricted to the basic splicing event types used in [rMATS turbo](https://github.com/Xinglab/rmats-turbo) ([Basic Events Example](#basic-events-example)).
 
 ### Differential Isoform Analysis
 
@@ -156,6 +160,7 @@ The main outputs are:
   + Visualization of the ASM splice graph: `results_by_gene/{gene}/{asm}_graph.png`, `results_by_gene/{gene}/{asm}_simple_graph.png`
   + List of splicing changes between the most significant isoforms: `results_by_gene/{gene}/{asm}_isoform_differences_{isoform}_to_{isoform}.tsv`
 * If multiple significant ASMs were detected with the same splicing changes between the most significant isoforms then there will be a file listing the "duplicate" ASMs for that gene: `results_by_gene/{gene}/duplicate_asms.tsv`
+* Statistics for ASM distal coupling: `distal_coupling_stats.tsv`
 
 The main steps are:
 * [organize_gene_info_by_chr.py](#organize_gene_info_by_chrpy)
@@ -183,7 +188,7 @@ See [ASM Analysis Example](#asm-analysis-example) for details.
 The main required configuration values are:
 * `run_name`: used to name output files
 * `gtf_name`: the `.gtf` file to use
-* `group_1_samples` and `group_2_samples:`: each entry gives a sample name and a list of `sam` or `bam` alignment files.
+* `group_1_samples` and `group_2_samples:`: each entry gives a sample name and a list of `sam`, `bam`, or `simplified` alignment files.
 * `quantify_full_length_transcripts`: whether to analyze full-length transcripts
 * `quantify_asms`: whether to analyze ASM isoforms
 * `quantify_basic_events`: whether to do an analysis restricted to basic splicing events (SE, A5SS, A3SS, MXE, RI)
@@ -206,6 +211,30 @@ cp example/gencode.v43.annotation_filtered.gtf references/
 ```
 
 Replace `/path/to/example` with the actual path to [./example](./example) on your system. Finally run `./run_snakemake` to produce output at `./results/example/`
+
+### Comparing Multiple Groups
+
+If the input samples are from more than two groups then the workflow can be run multiple times to compare different pairs of groups. As an example, if the samples are grouped into three different conditions:
+
+* Detect splicing events using samples from all three groups
+  + List all samples under `group_1_samples:`
+  + Set `group_2_samples: {}` or remove `group_2_samples` from [snakemake_config.yaml](snakemake_config.yaml)
+  + Set `run_name:` with a descriptive name such as `'all_group_run'`
+  + Run `./run_snakemake`
+* Perform a two group comparison on groups 1 and 2 using the previously detected events
+  + List the samples for group 1 under `group_1_samples:` and the samples for group 2 under `group_2_samples:`
+    - The files like `results/all_group_run/simplified/{sample}_{i}_simplified.tsv` can be configured with `simplified:` instead of the original `sam:` or `bam:`
+  + Set `group_1_name:` and `group_2_name:`
+  + Set `annotation_dir: '/path/to/results/all_group_run/annotation'`
+  + Set `predefined_asm_events: '/path/to/results/all_group_run/asm_events'`
+  + Set `predefined_basic_events: '/path/to/results/all_group_run/basic_events'`
+  + Set `predefined_full_length_events: '/path/to/results/all_group_run/full_length_events'`
+  + Set `run_name:` with a descriptive name such as `'group_1_vs_group_2'`
+  + Run `./run_snakemake`
+* Perform a two group comparison on groups 1 and 3 using the previously detected events
+  + Like above, but update `group_1_samples:`, `group_2_samples:`, `group_1_name:`, `group_2_name:` and `run_name:` to reflect the current comparison
+* Perform a two group comparison on groups 2 and 3 using the previously detected events
+  + Like above, but update `group_1_samples:`, `group_2_samples:`, `group_1_name:`, `group_2_name:` and `run_name:` to reflect the current comparison
 
 ### Shiny
 
@@ -243,7 +272,7 @@ The example data is based on cell line data from [https://doi.org/10.1126/sciadv
 
 #### Creating an input GTF
 
-A GTF with high-confidence transcripts can be created using [long-read-rna-seq-pipeline](https://github.com/RNA-ROB/long-read-rna-seq-pipeline). From that repo, `scripts/Build_Transcriptome.py`, `assets/human.refTSS_v4.1.hg38.bed.gz`, `assets/atlas.clusters.2.0.GRCh38.bed.gz`, and the `.tbi` index files for the `.bed.gz` files will be used
+A GTF with high-confidence transcripts can be created using [AMALGAM](https://github.com/RNA-ROB/amalgam). From that repo, `scripts/Build_Transcriptome.py`, `assets/human.refTSS_v4.1.hg38.bed.gz`, `assets/atlas.clusters.2.0.GRCh38.bed.gz`, and the `.tbi` index files for the `.bed.gz` files will be used
 
 Sorted `.sam` or `.bam` files are needed. The example `*_filtered.sam` files are already sorted. Sorted alignment files can be created with a command like: `samtools sort -o sorted.bam unsorted.sam`
 
@@ -275,7 +304,7 @@ gffcompare -i example/gtf_list.txt -T -o example/gffcompare
 
 The command to create the GTF of high-confidence transcripts is:
 ```
-python Build_Transcriptome.py -i example/gffcompare -g example/gencode.v43.annotation_filtered.gtf -f example/GRCh38.primary_assembly.genome_filtered.fa -x human.refTSS_v4.1.hg38.bed.gz -y atlas.clusters.2.0.GRCh38.bed.gz -o example/combined.gtf
+python amalgam/scripts/Build_Transcriptome.py -i example/gffcompare -g example/gencode.v43.annotation_filtered.gtf -f example/GRCh38.primary_assembly.genome_filtered.fa -x amalgam/assets/human.refTSS_v4.1.hg38.bed.gz -y amalgam/assets/atlas.clusters.2.0.GRCh38.bed.gz -o example/combined.gtf
 ```
 
 The `gene_name` and `Ensembl_canonical` tag are copied from the GENCODE GTF attributes to the new GTF:
@@ -351,8 +380,8 @@ rmats-long detect_differential_isoforms.py --out-dir ./example_out/rmats_long --
 
 Along with other status messages, that command should print: `found 17 isoforms from 5 ASMs from 5 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.05 and average reads per group >= 10.0 and ASM CPM >= 5.0% of gene CPM`. One significant row from `./example_out/rmats_long/differential_isoforms_filtered.tsv` is:
 ```
-asm_id	gene_id	isoform_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion	pc3e_1_count	pc3e_2_count	pc3e_3_count	gs689_1_count	gs689_2_count	gs689_3_count	pc3e_1_cpm	pc3e_2_cpm	pc3e_3_cpm	gs689_1_cpm	gs689_2_cpm	gs689_3_cpm
-0_3	ENSG00000198561.16	ENST00000358694.10	222.3	1	2.842e-50	8.384e-49	0	0	0	0.2553	0.3632	0.2641	0	0.2942	-0.2942	0	0	0	55.45	88.51	106.5	0	0	0	6.562e+04	9.621e+04	6.916e+04
+asm_id	gene_id	gene_name	isoform_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion	pc3e_1_count	pc3e_2_count	pc3e_3_count	gs689_1_count	gs689_2_count	gs689_3_count	pc3e_1_cpm	pc3e_2_cpm	pc3e_3_cpm	gs689_1_cpm	gs689_2_cpm	gs689_3_cpm
+0_3	ENSG00000198561.16	CTNND1	ENST00000358694.10	222.3	1	2.842e-50	8.384e-49	0	0	0	0.2553	0.3632	0.2641	0	0.2942	-0.2942	0	0	0	55.45	88.51	106.5	0	0	0	6.562e+04	9.621e+04	6.916e+04
 ```
 
 Next it will run a command similar to what is below using some temporary files:
@@ -382,6 +411,7 @@ ENST00000358694.10	ENST00000529986.5	COMPLEX	chr11:57762046:57762046:+;chr11:577
 Similar commands are run for the other significant genes. A summary is written to `./example_out/rmats_long/summary.txt`:
 ```
 ## [...]/python rmats_long.py --gtf-dir ./example_out/annotation [...]
+## YYYY-mm-ddTHH:MM:SS
 ## source code commit: [...]
 ## significant differential isoform usage
 total significant isoforms: 17
@@ -466,6 +496,7 @@ ENST00000418800.6	ENST00000376568.8	SE	chr6:30895404:30895514:+
 Similar commands are run for the other significant genes. A summary is written to `./example_out_from_abun/summary.txt`:
 ```
 ## [...]/python rmats_long.py --abundance ./example/samples_N2_R0_abundance.esp [...]
+## YYYY-mm-ddTHH:MM:SS
 ## source code commit: [...]
 ## significant differential isoform usage
 total significant isoforms: 8
@@ -561,8 +592,8 @@ rmats-long detect_differential_isoforms.py --out-dir ./example_out_asm/rmats_lon
 
 Along with other status messages, that command should print: `found 66 isoforms from 19 ASMs from 3 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.05 and average reads per group >= 10.0 and ASM CPM >= 5.0% of gene CPM`. One significant row from `./example_out_asm/rmats_long/differential_isoforms_filtered.tsv` is:
 ```
-asm_id	gene_id	isoform_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion	pc3e_1_count	pc3e_2_count	pc3e_3_count	gs689_1_count	gs689_2_count	gs689_3_count	pc3e_1_cpm	pc3e_2_cpm	pc3e_3_cpm	gs689_1_cpm	gs689_2_cpm	gs689_3_cpm
-0_9	ENSG00000198561.16	0_9_3	242.9	1	9.22e-55	1.899e-52	1	1	1	0.25	0.2117	0.305	1	0.2556	0.7444	36.97	33.97	53.92	18.75	18.21	45.44	6.213e+04	7.686e+04	9.733e+04	2.219e+04	1.979e+04	2.951e+04
+asm_id	gene_id	gene_name	isoform_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion	pc3e_1_count	pc3e_2_count	pc3e_3_count	gs689_1_count	gs689_2_count	gs689_3_count	pc3e_1_cpm	pc3e_2_cpm	pc3e_3_cpm	gs689_1_cpm	gs689_2_cpm	gs689_3_cpm
+0_9	ENSG00000198561.16	CTNND1	0_9_3	242.9	1	9.22e-55	1.899e-52	1	1	1	0.25	0.2117	0.305	1	0.2556	0.7444	36.97	33.97	53.92	18.75	18.21	45.44	6.213e+04	7.686e+04	9.733e+04	2.219e+04	1.979e+04	2.951e+04
 ```
 
 Next it will run a command similar to what is below using some temporary files:
@@ -614,6 +645,7 @@ rmats-long plot_simple_splice_graph.py --out-file ./example_out_asm/rmats_long/r
 Similar commands are run for the other significant ASMs. A summary is written to `./example_out_asm/rmats_long/summary.txt`:
 ```
 ## [...]/python rmats_long.py --gtf-dir ./example_out_asm/annotation [...]
+## YYYY-mm-ddTHH:MM:SS
 ## source code commit: [...]
 ## significant differential isoform usage
 total significant isoforms: 22
@@ -641,6 +673,15 @@ total ASMs with 5 isoforms: 2
 total ASMs with 6 isoforms: 0
 total ASMs with 7 isoforms: 0
 total ASMs with 8 isoforms: 1
+```
+
+An analysis of ASM coupling can be run with these two commands:
+```
+rmats-long check_asm_coupling.py --event-dir ./example_out_asm/events --asm-counts-dir ./example_out_asm/asm_counts --count-tsv ./example_out_asm/rmats_long/count.tsv --group-1 ./example/group_1.txt --group-2 ./example/group_2.txt --group-1-name PC3E --group-2-name GS689 --out-tsv ./example_out_asm/distal_coupling_counts.tsv --isoform-out-tsv ./example_out_asm/distal_coupling_main_isoforms.tsv
+```
+
+```
+rmats-long check_asm_coupling.R ./example_out_asm/distal_coupling_counts.tsv ./example_out_asm/distal_coupling_stats.tsv
 ```
 
 #### Basic Events Example
@@ -687,8 +728,8 @@ rmats-long rmats_long.py --gtf-dir ./example_out_basic/annotation --align-dir ./
 
 Along with other status messages, the `rmats_long.py` command should print: `found 14 isoforms from 7 ASMs from 2 genes with adj_pvalue <= 0.05 and abs(delta_isoform_proportion) >= 0.05 and average reads per group >= 10.0 and ASM CPM >= 5.0% of gene CPM`. One significant row from `./example_out_basic/rmats_long/differential_isoforms_filtered.tsv` is:
 ```
-asm_id	gene_id	isoform_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion	pc3e_1_count	pc3e_2_count	pc3e_3_count	gs689_1_count	gs689_2_count	gs689_3_count	pc3e_1_cpm	pc3e_2_cpm	pc3e_3_cpm	gs689_1_cpm	gs689_2_cpm	gs689_3_cpm
-0_9	ENSG00000198561.16	0_9_0	89.5	1	3.065e-21	4.597e-20	0.02703	0.0294	0.01962	0.55	0.5385	0.411	0.02535	0.4998	-0.4745	1.027	1.029	1.079	23.65	21.54	33.29	1726	2328	1948	2.799e+04	2.341e+04	2.162e+04
+asm_id	gene_id	gene_name	isoform_id	lr	df	pvalue	adj_pvalue	pc3e_1_proportion	pc3e_2_proportion	pc3e_3_proportion	gs689_1_proportion	gs689_2_proportion	gs689_3_proportion	group_1_average_proportion	group_2_average_proportion	delta_isoform_proportion	pc3e_1_count	pc3e_2_count	pc3e_3_count	gs689_1_count	gs689_2_count	gs689_3_count	pc3e_1_cpm	pc3e_2_cpm	pc3e_3_cpm	gs689_1_cpm	gs689_2_cpm	gs689_3_cpm
+0_9	ENSG00000198561.16	CTNND1	0_9_0	89.5	1	3.065e-21	4.597e-20	0.02703	0.0294	0.01962	0.55	0.5385	0.411	0.02535	0.4998	-0.4745	1.027	1.029	1.079	23.65	21.54	33.29	1726	2328	1948	2.799e+04	2.341e+04	2.162e+04
 ```
 
 The plots for that event are:
@@ -716,6 +757,7 @@ transcript1	transcript2	event	coordinates
 A summary is written to `./example_out_basic/rmats_long/summary.txt`:
 ```
 ## [...]/python rmats_long.py --gtf-dir ./example_out_basic/annotation [...]
+## YYYY-mm-ddTHH:MM:SS
 ## source code commit: [...]
 ## significant differential isoform usage
 total significant isoforms: 12
@@ -1250,6 +1292,7 @@ usage: organize_alignment_info_by_gene_and_chr.py [-h] --gtf-dir GTF_DIR
                                                   --out-dir OUT_DIR
                                                   --samples-tsv SAMPLES_TSV
                                                   [--sort-buffer-size SORT_BUFFER_SIZE]
+                                                  [--num-threads NUM_THREADS]
 
 Create 1 file per chr with read info by gene
 
@@ -1266,6 +1309,8 @@ options:
   --sort-buffer-size SORT_BUFFER_SIZE
                         Used for the --buffer-size argument of sort. Default:
                         2G
+  --num-threads NUM_THREADS
+                        The number of threads to use (default 1)
 ```
 
 #### detect_splicing_events.py
@@ -1285,7 +1330,7 @@ usage: detect_splicing_events.py [-h] --gtf-dir GTF_DIR
                                  [--output-basic-events]
                                  [--simplify-gene-isoform-endpoints]
                                  [--filter-gene-isoforms-by-edge]
-                                 [--output-strict-only]
+                                 [--output-strict-only] [--novel-junctions]
 
 Detect alternative splicing events from a set of isoforms
 
@@ -1322,6 +1367,8 @@ options:
                         With --output-full-gene-asm, require each isoform to
                         have --min-reads-per-edge for each splice junction
   --output-strict-only  Only output events where is_strict is True
+  --novel-junctions     Consider splice junctions found in --align-dir but not
+                        --gtf-dir
 ```
 
 #### count_reads_for_asms.py
@@ -1551,4 +1598,46 @@ Optional:
                         A .tsv with 1 line per sample. The first line has the
                         column names. The first column is sample_id. Each
                         additional column is a covariate.
+```
+
+#### check_asm_coupling.py
+
+```
+rmats-long check_asm_coupling.py -h
+
+usage: check_asm_coupling.py [-h] --event-dir EVENT_DIR --asm-counts-dir
+                             ASM_COUNTS_DIR --count-tsv COUNT_TSV
+                             [--group-1 GROUP_1] [--group-2 GROUP_2]
+                             [--group-1-name GROUP_1_NAME]
+                             [--group-2-name GROUP_2_NAME]
+                             [--group-tsv GROUP_TSV] --out-tsv OUT_TSV
+                             --isoform-out-tsv ISOFORM_OUT_TSV
+
+Check pairs of ASMs for splicing coupling
+
+options:
+  -h, --help            show this help message and exit
+  --event-dir EVENT_DIR
+                        The output directory from detect_splicing_events.py
+  --asm-counts-dir ASM_COUNTS_DIR
+                        The output directory from count_reads_for_asms.py
+  --count-tsv COUNT_TSV
+                        The count.tsv from rmats_long.py
+  --group-1 GROUP_1     The path to a file listing the sample names for group
+                        1. The file should have a single line with the sample
+                        names as a comma separated list.
+  --group-2 GROUP_2     The path to a file listing the sample names for group
+                        2
+  --group-1-name GROUP_1_NAME
+                        A name for --group-1 (default group 1)
+  --group-2-name GROUP_2_NAME
+                        A name for --group-2 (default group 2)
+  --group-tsv GROUP_TSV
+                        A .tsv with the headers "sample" and "group". Can be
+                        used instead of --group-1 and --group-2 to define more
+                        than two groups
+  --out-tsv OUT_TSV     Where to write coupling results
+  --isoform-out-tsv ISOFORM_OUT_TSV
+                        Where to write the main isoform determined for each
+                        ASM
 ```
