@@ -65,6 +65,11 @@ def parse_args():
     parser.add_argument('--output-strict-only',
                         action='store_true',
                         help='Only output events where is_strict is True')
+    parser.add_argument(
+        '--novel-junctions',
+        action='store_true',
+        help=('Consider splice junctions found in --align-dir but'
+              ' not --gtf-dir'))
 
     args = parser.parse_args()
     # Without the align_dir the edges cannot be filtered by read count
@@ -230,18 +235,31 @@ def update_if_closer(container, key_node, new_node):
         container[key_node] = new_node
 
 
-# build_splice_graph returns:
-#  splice_graph: the source node of the graph
-#  sink: the sink node of the graph
-#  closest_downstream_by_node: stores one outgoing edge for each node
-#  closest_upstream_by_node: stores one incoming edge for each node
+# closest_downstream_by_node: stores one outgoing edge for each node
+# closest_upstream_by_node: stores one incoming edge for each node
 # The extra closest_downstream_by_node and closest_upstream_by_node are used
 # to provide missing exon start/end coordinates for splicing events
 # that don't depend on the full exon
-def build_splice_graph(transcripts, strand):
-    all_nodes = dict()
+def set_closest_up_and_down(graph_results):
     closest_downstream_by_node = dict()
     closest_upstream_by_node = dict()
+    graph_results['closest_down'] = closest_downstream_by_node
+    graph_results['closest_up'] = closest_upstream_by_node
+    all_nodes = graph_results['all_nodes']
+    for node in all_nodes:
+        for down_node in node.edges:
+            update_if_closer(closest_downstream_by_node, node, down_node)
+
+        for up_node in node.from_nodes:
+            update_if_closer(closest_upstream_by_node, node, up_node)
+
+
+# build_splice_graph returns:
+#  splice_graph: the source node of the graph
+#  sink: the sink node of the graph
+#  all_nodes: a dict containing all nodes in the graph
+def build_splice_graph(transcripts, strand):
+    all_nodes = dict()
     splice_graph = Node(None, 'source')
     all_nodes[splice_graph] = splice_graph
     sink_node = Node(None, 'sink')
@@ -262,8 +280,6 @@ def build_splice_graph(transcripts, strand):
                 all_nodes[start_node] = start_node
 
             add_node_edge(node, start_node)
-            update_if_closer(closest_downstream_by_node, node, start_node)
-            update_if_closer(closest_upstream_by_node, start_node, node)
             # move to exon start node
             node = start_node
 
@@ -275,21 +291,16 @@ def build_splice_graph(transcripts, strand):
                 all_nodes[end_node] = end_node
 
             add_node_edge(node, end_node)
-            update_if_closer(closest_downstream_by_node, node, end_node)
-            update_if_closer(closest_upstream_by_node, end_node, node)
             # move to exon end node
             node = end_node
 
         # add sink node at end of every transcript
         add_node_edge(node, sink_node)
-        update_if_closer(closest_downstream_by_node, node, sink_node)
-        update_if_closer(closest_upstream_by_node, sink_node, node)
 
     results = dict()
     results['graph'] = splice_graph
     results['sink'] = sink_node
-    results['closest_down'] = closest_downstream_by_node
-    results['closest_up'] = closest_upstream_by_node
+    results['all_nodes'] = all_nodes
     return results
 
 
@@ -1201,6 +1212,9 @@ def check_if_strict_asm(paths, all_edges, strand, start_node, end_node):
                 continue
 
             edge = (prev_node, node)
+            if edge not in all_edges:
+                return False
+
             asm_edges.add(edge)
             prev_node = node
             if node == end_node:
@@ -1451,14 +1465,26 @@ def lookup_node_details(node_details, node_type, coordinate=None):
     return extra_nodes[mid_key]
 
 
-def increment_edge_weight(node_details, from_node, to_node):
+def increment_edge_weight(node_details, from_node, to_node, novel_junctions):
     from_is_extra = from_node not in node_details['orig_nodes']
+    to_is_extra = to_node not in node_details['orig_nodes']
     old_count = from_node.edges.get(to_node)
     if old_count is not None:
         from_node.edges[to_node] = old_count + 1
         return
 
     if from_is_extra:
+        from_node.edges[to_node] = 1
+        return
+
+    # The --novel-junctions parameter allows splice junctions where
+    # * both splice sites are in the GTF
+    # * The SJ is not in the GTF
+    # * An alignment supports that SJ
+    if ((novel_junctions and (not to_is_extra)
+         and (from_node.node_type == 'end')
+         and (to_node.node_type == 'start'))):
+        add_node_edge(from_node, to_node)
         from_node.edges[to_node] = 1
         return
 
@@ -1471,7 +1497,8 @@ def increment_edge_weight(node_details, from_node, to_node):
     extra_for_from[to_node] = old_count + 1
 
 
-def add_read_count_to_matching_edges(start, end, sjs, node_details):
+def add_read_count_to_matching_edges(start, end, sjs, novel_junctions,
+                                     node_details):
     if not node_details['coords']:
         # No transcripts for this strand
         return
@@ -1482,8 +1509,9 @@ def add_read_count_to_matching_edges(start, end, sjs, node_details):
                                           'start',
                                           coordinate=start)
     read_end_node = lookup_node_details(node_details, 'end', coordinate=end)
-    increment_edge_weight(node_details, source, read_start_node)
-    increment_edge_weight(node_details, read_end_node, sink)
+    increment_edge_weight(node_details, source, read_start_node,
+                          novel_junctions)
+    increment_edge_weight(node_details, read_end_node, sink, novel_junctions)
 
     prev_exon_start_node = read_start_node
     for sj in sjs:
@@ -1496,11 +1524,14 @@ def add_read_count_to_matching_edges(start, end, sjs, node_details):
         start_node = lookup_node_details(node_details,
                                          'start',
                                          coordinate=sj_end)
-        increment_edge_weight(node_details, prev_exon_start_node, end_node)
-        increment_edge_weight(node_details, end_node, start_node)
+        increment_edge_weight(node_details, prev_exon_start_node, end_node,
+                              novel_junctions)
+        increment_edge_weight(node_details, end_node, start_node,
+                              novel_junctions)
         prev_exon_start_node = start_node
 
-    increment_edge_weight(node_details, prev_exon_start_node, read_end_node)
+    increment_edge_weight(node_details, prev_exon_start_node, read_end_node,
+                          novel_junctions)
 
 
 def remove_edges_based_on_read_counts(min_reads_per_edge, splice_graph):
@@ -1540,7 +1571,7 @@ def initialize_extra_node_details(graph_results, extra_details, strand):
     extra_details['extra_nodes'] = extra_nodes
     coordinates = list()
     extra_details['coords'] = coordinates
-    for node in graph_results['closest_down']:
+    for node in graph_results['all_nodes']:
         if node in [source, sink]:
             continue
 
@@ -1575,8 +1606,8 @@ def initialize_extra_node_details(graph_results, extra_details, strand):
         extra_nodes[mid_end_after_coord] = mid_end_after_coord
 
 
-def filter_splice_graphs(gene_i, min_reads_per_edge, align_handle_and_line,
-                         splice_graph_results_plus,
+def filter_splice_graphs(gene_i, min_reads_per_edge, novel_junctions,
+                         align_handle_and_line, splice_graph_results_plus,
                          splice_graph_results_minus):
     extra_details_plus = dict()
     extra_details_minus = dict()
@@ -1612,11 +1643,12 @@ def filter_splice_graphs(gene_i, min_reads_per_edge, align_handle_and_line,
         # the splice graphs for both '+' and '-' strand transcripts.
         #
         # align_strand = columns[6]
-        add_read_count_to_matching_edges(start, end, sjs, extra_details_plus)
+        add_read_count_to_matching_edges(start, end, sjs, novel_junctions,
+                                         extra_details_plus)
         reversed_sjs = reverse_sjs(sjs)
         # start and end are swapped for the minus strand
         add_read_count_to_matching_edges(end, start, reversed_sjs,
-                                         extra_details_minus)
+                                         novel_junctions, extra_details_minus)
 
     remove_edges_based_on_read_counts(min_reads_per_edge,
                                       splice_graph_results_plus['graph'])
@@ -1973,7 +2005,7 @@ def detect_splicing_events_for_gene(
         gene, gene_i, all_transcripts, max_nodes_in_event, max_paths_in_event,
         min_reads_per_edge, output_full_gene_asm, output_basic_events,
         simplify_gene_isoform_endpoints, filter_gene_isoforms_by_edge,
-        output_strict_only, show_counts, chr_id, chr_event_i,
+        output_strict_only, novel_junctions, show_counts, chr_id, chr_event_i,
         align_handle_and_line, graph_out_handle, out_handle):
     separated = separate_plus_and_minus_strand_transcripts(all_transcripts)
     events = list()
@@ -1981,9 +2013,12 @@ def detect_splicing_events_for_gene(
     splice_graph_results_plus = build_splice_graph(separated['plus'], '+')
     splice_graph_results_minus = build_splice_graph(separated['minus'], '-')
     extra_node_details = filter_splice_graphs(gene_i, min_reads_per_edge,
+                                              novel_junctions,
                                               align_handle_and_line,
                                               splice_graph_results_plus,
                                               splice_graph_results_minus)
+    set_closest_up_and_down(splice_graph_results_plus)
+    set_closest_up_and_down(splice_graph_results_minus)
     extra_details_plus = extra_node_details['plus']
     extra_details_minus = extra_node_details['minus']
     output_graph_description(gene, extra_details_plus, show_counts,
@@ -2035,8 +2070,9 @@ def detect_splicing_events_for_gene(
             gene_id_value = ''
 
         isoforms = event['isoforms']
-        isoform_strs = isoform_strings_from_isoforms(isoforms)
-        columns.append(';'.join(isoform_strs))
+        isoforms_str = rmats_long_utils.format_isoforms_str_from_exons(
+            isoforms)
+        columns.append(isoforms_str)
         isoform_id_strs = list()
         isoform_ids = event['isoform_ids']
         for isoform_i, isoform_id in enumerate(isoform_ids):
@@ -2045,7 +2081,9 @@ def detect_splicing_events_for_gene(
 
             isoform_id_strs.append(isoform_id)
 
-        columns.append(';'.join(isoform_id_strs))
+        isoform_ids_str = rmats_long_utils.format_isoform_ids_str(
+            isoform_id_strs)
+        columns.append(isoform_ids_str)
         columns.extend([
             event['start_always_ss'], event['start_never_ss'],
             event['end_always_ss'], event['end_never_ss'], event['is_strict']
@@ -2055,27 +2093,12 @@ def detect_splicing_events_for_gene(
     return chr_event_i
 
 
-def isoform_strings_from_isoforms(isoforms):
-    isoform_strs = list()
-    for isoform in isoforms:
-        coord_strs = list()
-        for exon in isoform:
-            start, end = exon
-            coord_strs.append(str(start))
-            coord_strs.append(str(end))
-
-        isoform_str = ','.join(coord_strs)
-        isoform_strs.append(isoform_str)
-
-    return isoform_strs
-
-
 def detect_and_write_events_thread_with_handles(
         max_nodes_in_event, max_paths_in_event, min_reads_per_edge,
         output_full_gene_asm, output_basic_events,
         simplify_gene_isoform_endpoints, filter_gene_isoforms_by_edge,
-        output_strict_only, show_counts, chr_id, gtf_handle, align_handle,
-        graph_out_handle, out_handle):
+        output_strict_only, novel_junctions, show_counts, chr_id, gtf_handle,
+        align_handle, graph_out_handle, out_handle):
     headers = [
         'asm_id', 'gene_i', 'gene_id', 'event_type', 'strand', 'start', 'end',
         'isoforms', 'isoform_ids', 'start_always_ss', 'start_never_ss',
@@ -2107,9 +2130,9 @@ def detect_and_write_events_thread_with_handles(
                 gene, gene_i, transcripts, max_nodes_in_event,
                 max_paths_in_event, min_reads_per_edge, output_full_gene_asm,
                 output_basic_events, simplify_gene_isoform_endpoints,
-                filter_gene_isoforms_by_edge, output_strict_only, show_counts,
-                chr_id, chr_event_i, align_handle_and_line, graph_out_handle,
-                out_handle)
+                filter_gene_isoforms_by_edge, output_strict_only,
+                novel_junctions, show_counts, chr_id, chr_event_i,
+                align_handle_and_line, graph_out_handle, out_handle)
             gene_i += 1
 
         gene = parsed['gene']
@@ -2120,16 +2143,15 @@ def detect_and_write_events_thread_with_handles(
             gene, gene_i, transcripts, max_nodes_in_event, max_paths_in_event,
             min_reads_per_edge, output_full_gene_asm, output_basic_events,
             simplify_gene_isoform_endpoints, filter_gene_isoforms_by_edge,
-            output_strict_only, show_counts, chr_id, chr_event_i,
-            align_handle_and_line, graph_out_handle, out_handle)
+            output_strict_only, novel_junctions, show_counts, chr_id,
+            chr_event_i, align_handle_and_line, graph_out_handle, out_handle)
 
 
-def detect_and_write_events_thread(input_queue, max_nodes_in_event,
-                                   max_paths_in_event, min_reads_per_edge,
-                                   output_full_gene_asm, output_basic_events,
-                                   simplify_gene_isoform_endpoints,
-                                   filter_gene_isoforms_by_edge,
-                                   output_strict_only, show_counts):
+def detect_and_write_events_thread(
+        input_queue, max_nodes_in_event, max_paths_in_event,
+        min_reads_per_edge, output_full_gene_asm, output_basic_events,
+        simplify_gene_isoform_endpoints, filter_gene_isoforms_by_edge,
+        output_strict_only, novel_junctions, show_counts):
     while True:
         arguments = input_queue.get()
         if arguments is None:
@@ -2151,9 +2173,9 @@ def detect_and_write_events_thread(input_queue, max_nodes_in_event,
                                 output_basic_events,
                                 simplify_gene_isoform_endpoints,
                                 filter_gene_isoforms_by_edge,
-                                output_strict_only, show_counts, chr_id,
-                                gtf_handle, align_handle, graph_out_handle,
-                                out_handle)
+                                output_strict_only, novel_junctions,
+                                show_counts, chr_id, gtf_handle, align_handle,
+                                graph_out_handle, out_handle)
                     else:
                         align_handle = None
                         detect_and_write_events_thread_with_handles(
@@ -2162,8 +2184,8 @@ def detect_and_write_events_thread(input_queue, max_nodes_in_event,
                             output_basic_events,
                             simplify_gene_isoform_endpoints,
                             filter_gene_isoforms_by_edge, output_strict_only,
-                            show_counts, chr_id, gtf_handle, align_handle,
-                            graph_out_handle, out_handle)
+                            novel_junctions, show_counts, chr_id, gtf_handle,
+                            align_handle, graph_out_handle, out_handle)
 
 
 def detect_splicing_events(max_nodes_in_event, max_paths_in_event, num_threads,
@@ -2171,7 +2193,7 @@ def detect_splicing_events(max_nodes_in_event, max_paths_in_event, num_threads,
                            output_basic_events,
                            simplify_gene_isoform_endpoints,
                            filter_gene_isoforms_by_edge, output_strict_only,
-                           gtf_dir, align_dir, out_dir):
+                           novel_junctions, gtf_dir, align_dir, out_dir):
     # TODO only apply max_nodes_in_event after reaching a timeout on the full search
     out_dir = os.path.abspath(out_dir)
     rmats_long_utils.create_output_dir(out_dir, check_empty=True)
@@ -2186,7 +2208,7 @@ def detect_splicing_events(max_nodes_in_event, max_paths_in_event, num_threads,
                   min_reads_per_edge, output_full_gene_asm,
                   output_basic_events, simplify_gene_isoform_endpoints,
                   filter_gene_isoforms_by_edge, output_strict_only,
-                  show_counts))
+                  novel_junctions, show_counts))
         threads.append(thread)
         thread.start()
 
@@ -2206,8 +2228,7 @@ def detect_splicing_events(max_nodes_in_event, max_paths_in_event, num_threads,
                     # No events will pass the read cutoff
                     continue
 
-        graph_out_name = 'graph_{}.txt'.format(chr_id)
-        graph_out_path = os.path.join(out_dir, graph_out_name)
+        graph_out_path = rmats_long_utils.get_graph_file_path(out_dir, chr_id)
         out_path = os.path.join(out_dir, file_name)
         arguments = {
             'gtf_path': gtf_path,
@@ -2244,8 +2265,8 @@ def main():
                            args.output_full_gene_asm, args.output_basic_events,
                            args.simplify_gene_isoform_endpoints,
                            args.filter_gene_isoforms_by_edge,
-                           args.output_strict_only, gtf_dir, align_dir,
-                           out_dir)
+                           args.output_strict_only, args.novel_junctions,
+                           gtf_dir, align_dir, out_dir)
     print('detect_splicing_events.py finished')
 
 

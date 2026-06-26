@@ -1,17 +1,32 @@
 # Resource allocation
 add_novel_transcripts_to_gtf_mem_gb: 2
 add_novel_transcripts_to_gtf_time_hr: 6
+check_asm_coupling_py_mem_gb: 2
+check_asm_coupling_py_time_hr: 6
+check_asm_coupling_r_mem_gb: 2
+check_asm_coupling_r_time_hr: 6
+check_transcript_to_asm_compatibility_mem_gb: 12
+check_transcript_to_asm_compatibility_threads: 4
+check_transcript_to_asm_compatibility_time_hr: 12
 clean_espresso_gtf_mem_gb: 2
 clean_espresso_gtf_time_hr: 6
 count_reads_for_asms_mem_gb: 40
 count_reads_for_asms_threads: 16
 count_reads_for_asms_time_hr: 12
+count_transcripts_for_asms_mem_gb: 4
+count_transcripts_for_asms_time_hr: 6
+create_alignments_from_events_mem_gb: 4
+create_alignments_from_events_time_hr: 6
 create_gtf_from_asm_definitions_mem_gb: 2
 create_gtf_from_asm_definitions_time_hr: 6
 detect_splicing_events_mem_gb: 12
 detect_splicing_events_threads: 12
 detect_splicing_events_time_hr: 12
-organize_alignment_info_mem_gb: 4
+filter_isoforms_with_counts_mem_gb: 8
+filter_isoforms_with_counts_threads: 4
+filter_isoforms_with_counts_time_hr: 12
+organize_alignment_info_mem_gb: 12
+organize_alignment_info_threads: 4
 organize_alignment_info_time_hr: 12
 organize_gene_info_mem_gb: 4
 organize_gene_info_time_hr: 12
@@ -34,6 +49,9 @@ min_cpm_per_group: 0
 asm_proportion_of_gene: 0.05
 min_cpm_per_asm: 0
 min_isoform_reads: 1
+full_length_min_all_sjs_count: 0
+asms_min_all_sjs_count: 1
+basic_min_all_sjs_count: 1
 limit_asm_to_top_n_isoforms: 50
 min_reads_per_edge: 5
 max_nodes_in_event: 50
@@ -41,12 +59,15 @@ max_paths_in_event: 50
 plot_file_type: '.png'
 intron_scaling: 1
 max_transcripts: 7
+coupling_min_reads_per_group: 10
 simplify_gene_isoform_endpoints: false
 filter_gene_isoforms_by_edge: false
 quantify_full_length_transcripts: true
 quantify_asms: true
 quantify_basic_events: true
 require_asms_to_be_strict: true
+use_novel_junctions: false
+count_compatible_transcripts_by_asm: false
 # Reference files:
 # The snakemake can automatically download and gunzip files if
 # a matching url entry is given in the reference_files section below.
@@ -67,11 +88,31 @@ reference_files:
 # Input files:
 # optional /path/to/updated.gtf to add novel ESPRESSO isoforms to the main gtf
 espresso_gtf: ''
+# The path to an existing annotation/ directory produced by
+# organize_gene_info_by_chr.py can be used as annotation_dir.
+# The .gtf used to create that directory should be given as gtf_name.
+annotation_dir: ''
+# The path to existing event directories from
+# detect_splicing_events.py can be used.
+# The configured annotation_dir above should be the same as the one
+# used to detect the events.
+# Using an existing event directory allows detecting events using
+# all available samples and then using those events for a two group
+# comparison using a subset of samples.
+predefined_asm_events: ''
+predefined_basic_events: ''
+predefined_full_length_events: ''
 # An optional .tsv with 1 line per sample.
 # The first line has the column names.
 # The first column is sample_id.
 # Each additional column is a covariate.
 covar_tsv: ''
+# group_1_samples is required.
+# group_2_samples can be set to {}
+# For each sample, one of sam, bam, or simplified should be set.
+# * sam: path to a .sam file
+# * bam: path to a .bam file
+# * simplified: path to a .tsv file created by simplify_alignment_info.py
 group_1_name: 'PC3E'
 group_1_samples:
   pc3e_1:

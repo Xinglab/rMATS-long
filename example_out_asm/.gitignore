@@ -1,9 +1,13 @@
 /*_simplified.tsv
+/*_simplified.tsv.index
 /alignments/
 /annotation/
 /asm.gtf
 /asm_counts/
 /combined.gtf
+/distal_coupling_counts.tsv
+/distal_coupling_main_isoforms.tsv
+/distal_coupling_stats.tsv
 /espresso_cleaned.gtf
 /events/
 /rmats_long/coeff.tsv

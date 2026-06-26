@@ -1,4 +1,5 @@
 import argparse
+import multiprocessing
 import os
 import os.path
 import shutil
@@ -30,6 +31,11 @@ def parse_args():
                         default='2G',
                         help=('Used for the --buffer-size argument of sort.'
                               ' Default: %(default)s'))
+    parser.add_argument(
+        '--num-threads',
+        type=int,
+        default=1,
+        help='The number of threads to use (default %(default)s)')
 
     return parser.parse_args()
 
@@ -44,10 +50,35 @@ def parse_samples_tsv(samples_path):
 
             sample_name = columns[0]
             path = columns[1]
-            details = {'sample': sample_name, 'path': path}
+            index = '{}.index'.format(path)
+            details = {'sample': sample_name, 'path': path, 'index': index}
             sample_files.append(details)
 
     return sample_files
+
+
+def load_offsets_by_chr_from_index(index):
+    offsets_by_chr = dict()
+    with open(index, 'rt') as handle:
+        for line in handle:
+            columns = rmats_long_utils.read_tsv_line(line)
+            chr_name = columns[0]
+            offset_str = columns[1]
+            offset = int(offset_str)
+            offsets_by_chr[chr_name] = offset
+
+    return offsets_by_chr
+
+
+def load_indices(sample_files):
+    indices_by_path = dict()
+    for details in sample_files:
+        path = details['path']
+        index = details['index']
+        offset_by_chr = load_offsets_by_chr_from_index(index)
+        indices_by_path[path] = offset_by_chr
+
+    return indices_by_path
 
 
 def get_sorted_samples(sample_files):
@@ -75,62 +106,38 @@ def parse_read_line(line):
     return parsed
 
 
-def initialize_next_read_offsets(sample_files, chr_to_id):
+def initialize_next_read_offsets(sample_files, chr_name, offsets_for_chr):
     for details in sample_files:
         path = details['path']
+        offset = offsets_for_chr.get(path)
+        details['next_offset'] = offset
+        if offset is None:
+            continue
+
         with open(path, 'rt') as handle:
+            handle.seek(offset)
             line = handle.readline()
             if not line:
                 details['next_offset'] = None
                 continue
 
             parsed = parse_read_line(line)
-            # An alignment file may have a chr that wasn't in the gtf
-            chr_id = chr_to_id.get(parsed['chr'])
-            details['next_chr_id'] = chr_id
-            details['next_chr_name'] = parsed['chr']
+            found_chr = parsed['chr']
+            if found_chr != chr_name:
+                raise Exception('Expected {} at {} but found {}: {}'.format(
+                    chr_name, offset, found_chr, path))
+
             details['next_coord'] = parsed['start']
-            details['next_offset'] = 0
 
 
-def read_until_valid_chr_id(chr_to_id, sample_details):
-    if (((sample_details['next_offset'] is None)
-         or (sample_details.get('next_chr_id')))):
-        return
-
-    with open(sample_details['path'], 'rt') as handle:
-        offset = sample_details['next_offset']
-        if offset != 0:
-            handle.seek(offset)
-
-        line = handle.readline()
-        while line:
-            parsed = parse_read_line(line)
-            chr_id = chr_to_id.get(parsed['chr'])
-            if chr_id is not None:
-                sample_details['next_chr_id'] = chr_id
-                sample_details['next_chr_name'] = parsed['chr']
-                sample_details['next_coord'] = parsed['start']
-                sample_details['next_offset'] = offset
-                return
-
-            offset = handle.tell()
-            line = handle.readline()
-
-        sample_details['next_offset'] = None
-
-
-def select_next_sample_file(chr_to_id, sample_files):
+def select_next_sample_file(sample_files):
     next_sample = None
     for details in sample_files:
-        read_until_valid_chr_id(chr_to_id, details)
         if details['next_offset'] is None:
             continue
 
         if (((next_sample is None)
-             or (details['next_chr_id'] < next_sample['next_chr_id'])
-             or ((details['next_chr_id'] == next_sample['next_chr_id']) and
-                 (details['next_coord'] < next_sample['next_coord'])))):
+             or (details['next_coord'] < next_sample['next_coord']))):
             next_sample = details
 
     return next_sample
@@ -234,9 +241,9 @@ def check_for_gene_overlap(start, end, pending_genes, gtf_handle):
     return result
 
 
-def process_reads(chr_name, chr_to_id, sample_file, sorted_samples,
-                  total_by_sample, total_by_gene_by_sample, pending_genes,
-                  gtf_handle, out_handle, gene_count_handle):
+def process_reads(chr_name, sample_file, sorted_samples, total_by_sample,
+                  total_by_gene_by_sample, pending_genes, gtf_handle,
+                  out_handle, gene_count_handle):
     sample = sample_file['sample']
     read_total = total_by_sample.get(sample, 0)
     with open(sample_file['path'], 'rt') as read_handle:
@@ -255,9 +262,7 @@ def process_reads(chr_name, chr_to_id, sample_file, sorted_samples,
 
         while line:
             if parsed['chr'] != chr_name:
-                chr_id = chr_to_id.get(parsed['chr'])
-                sample_file['next_chr_id'] = chr_id
-                sample_file['next_chr_name'] = parsed['chr']
+                sample_file['next_offset'] = None
                 break
 
             read_total += 1
@@ -289,11 +294,11 @@ def process_reads(chr_name, chr_to_id, sample_file, sorted_samples,
             if overlap_result['past_some_gene']:
                 break
 
-        if not line:
-            sample_file['next_offset'] = None
-        else:
+        if line and parsed['chr'] == chr_name:
             sample_file['next_coord'] = parsed['start']
             sample_file['next_offset'] = offset
+        else:
+            sample_file['next_offset'] = None
 
     total_by_sample[sample] = read_total
 
@@ -359,6 +364,12 @@ def write_gene_count_lines(sorted_samples, dropped_genes,
         rmats_long_utils.write_tsv_line(gene_count_handle, columns)
 
 
+def update_total_by_sample(partial_by_sample, total_by_sample):
+    for sample, value in partial_by_sample.items():
+        old_total = total_by_sample.get(sample, 0)
+        total_by_sample[sample] = old_total + value
+
+
 def write_total_by_sample(sorted_samples, total_by_sample, out_dir):
     out_path = os.path.join(out_dir, 'sample_read_totals.tsv')
     headers = ['sample', 'total']
@@ -416,78 +427,97 @@ def combine_gene_count_files_to_cpm(chr_to_id, sorted_samples, total_by_sample,
                     rmats_long_utils.write_tsv_line(out_handle, cpm_columns)
 
 
-# TODO Index sample_files by chr when creating them.
-#      Then each chr can be processed on a thread.
-def organize_alignments_and_write_files(gtf_dir, buffer_size, sample_files,
-                                        sorted_samples, out_dir,
-                                        gene_count_tmp_dir):
+def organize_alignments_thread(buffer_size, sample_files, sorted_samples,
+                               input_queue, output_queue):
     total_by_sample = dict()
-    total_by_gene_by_sample = dict()
-    rmats_long_utils.copy_chr_name_mapping(gtf_dir, out_dir)
-    chr_id_mapping = rmats_long_utils.parse_chr_mapping(gtf_dir)
-    chr_to_id = chr_id_mapping['chr_to_id']
-    initialize_next_read_offsets(sample_files, chr_to_id)
-    out_handle = None
-    out_path = None
-    gtf_handle = None
-    gene_count_handle = None
-    gene_count_path = None
-    try:
-        pending_genes = {'genes': list(), 'next_gene': None}
-        current_chr_id = None
-        current_chr_name = None
-        while True:
-            sample_file = select_next_sample_file(chr_to_id, sample_files)
-            if sample_file is None:
-                break
+    while True:
+        input_data = input_queue.get()
+        if input_data is None:
+            break
 
-            if (((current_chr_id is None)
-                 or (sample_file['next_chr_id'] != current_chr_id))):
-                if out_handle is not None:
+        chr_name = input_data['chr_name']
+        offsets_for_chr = input_data['offsets_for_chr']
+        out_path = input_data['out_path']
+        gtf_path = input_data['gtf_path']
+        gene_count_path = input_data['gene_count_path']
+
+        total_by_gene_by_sample = dict()
+        initialize_next_read_offsets(sample_files, chr_name, offsets_for_chr)
+        pending_genes = {'genes': list(), 'next_gene': None}
+        with open(out_path, 'wt') as out_handle:
+            with open(gtf_path, 'rt') as gtf_handle:
+                with open(gene_count_path, 'wt') as gene_count_handle:
+                    while True:
+                        sample_file = select_next_sample_file(sample_files)
+                        if sample_file is None:
+                            break
+
+                        process_reads(chr_name, sample_file, sorted_samples,
+                                      total_by_sample, total_by_gene_by_sample,
+                                      pending_genes, gtf_handle, out_handle,
+                                      gene_count_handle)
+
                     write_gene_count_lines(sorted_samples,
                                            pending_genes['genes'],
                                            total_by_gene_by_sample,
                                            gene_count_handle)
-                    pending_genes['genes'] = list()
 
-                    out_handle.close()
-                    gtf_handle.close()
-                    gene_count_handle.close()
-                    sort_by_gene_i(out_path, buffer_size)
-                    sort_by_gene_i(gene_count_path, buffer_size)
-                    remove_gene_id_from_extra_lines_and_create_index(out_path)
-
-                current_chr_id = sample_file['next_chr_id']
-                current_chr_name = sample_file['next_chr_name']
-                out_path = rmats_long_utils.get_chr_file_path(
-                    out_dir, current_chr_id)
-                out_handle = open(out_path, 'wt')
-                gtf_path = rmats_long_utils.get_chr_file_path(
-                    gtf_dir, current_chr_id)
-                gtf_handle = open(gtf_path, 'rt')
-                gene_count_path = rmats_long_utils.get_chr_file_path(
-                    gene_count_tmp_dir, current_chr_id)
-                gene_count_handle = open(gene_count_path, 'wt')
-                pending_genes = {'genes': list(), 'next_gene': None}
-
-            process_reads(current_chr_name, chr_to_id, sample_file,
-                          sorted_samples, total_by_sample,
-                          total_by_gene_by_sample, pending_genes, gtf_handle,
-                          out_handle, gene_count_handle)
-
-        write_gene_count_lines(sorted_samples, pending_genes['genes'],
-                               total_by_gene_by_sample, gene_count_handle)
-        pending_genes['genes'] = list()
-    finally:
-        if out_handle is not None:
-            out_handle.close()
-            gtf_handle.close()
-            gene_count_handle.close()
-
-    if out_handle is not None:
         sort_by_gene_i(out_path, buffer_size)
         sort_by_gene_i(gene_count_path, buffer_size)
         remove_gene_id_from_extra_lines_and_create_index(out_path)
+
+    output_queue.put(total_by_sample)
+
+
+def organize_alignments_and_write_files(gtf_dir, buffer_size, num_threads,
+                                        sample_files, sorted_samples, out_dir,
+                                        gene_count_tmp_dir):
+    chr_id_mapping = rmats_long_utils.parse_chr_mapping(gtf_dir)
+    chr_to_id = chr_id_mapping['chr_to_id']
+    rmats_long_utils.copy_chr_name_mapping(gtf_dir, out_dir)
+
+    indices_by_path = load_indices(sample_files)
+    num_chr_names = len(chr_to_id)
+    num_threads = min(num_threads, num_chr_names)
+    input_queue = multiprocessing.Queue(num_chr_names + num_threads)
+    output_queue = multiprocessing.Queue(num_threads)
+    threads = list()
+    for _ in range(num_threads):
+        thread = multiprocessing.Process(target=organize_alignments_thread,
+                                         args=(buffer_size, sample_files,
+                                               sorted_samples, input_queue,
+                                               output_queue))
+        threads.append(thread)
+        thread.start()
+
+    for chr_name, chr_id in chr_to_id.items():
+        offsets_for_chr = dict()
+        for path, offsets in indices_by_path.items():
+            offset = offsets.get(chr_name)
+            offsets_for_chr[path] = offset
+
+        out_path = rmats_long_utils.get_chr_file_path(out_dir, chr_id)
+        gtf_path = rmats_long_utils.get_chr_file_path(gtf_dir, chr_id)
+        gene_count_path = rmats_long_utils.get_chr_file_path(
+            gene_count_tmp_dir, chr_id)
+        input_queue.put({
+            'chr_name': chr_name,
+            'offsets_for_chr': offsets_for_chr,
+            'out_path': out_path,
+            'gtf_path': gtf_path,
+            'gene_count_path': gene_count_path
+        })
+
+    # Signal the end of inputs
+    for _ in range(num_threads):
+        input_queue.put(None)
+
+    rmats_long_utils.join_threads_and_raise_if_error(threads)
+
+    total_by_sample = dict()
+    for _ in range(num_threads):
+        thread_total_by_sample = output_queue.get()
+        update_total_by_sample(thread_total_by_sample, total_by_sample)
 
     write_total_by_sample(sorted_samples, total_by_sample, out_dir)
     combine_gene_count_files_to_cpm(chr_to_id, sorted_samples, total_by_sample,
@@ -514,8 +544,9 @@ def main():
                                      dir=out_dir) as gene_count_tmp_dir:
         organize_alignments_and_write_files(args.gtf_dir,
                                             args.sort_buffer_size,
-                                            sample_files, sorted_samples,
-                                            out_dir, gene_count_tmp_dir)
+                                            args.num_threads, sample_files,
+                                            sorted_samples, out_dir,
+                                            gene_count_tmp_dir)
 
     remove_empty_out_files(out_dir)
     print('organize_alignment_info_by_gene_and_chr.py finished')

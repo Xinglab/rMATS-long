@@ -134,6 +134,10 @@ check_for_arguments_in_summary <- function(parent_dir, summary_txt) {
                                            parent_dir)
   result$gencode_gtf <- find_relative_path(result$gencode_gtf, result$out_dir,
                                            parent_dir)
+  if (!base::file.exists(result$gencode_gtf)) {
+    gencode_name <- get_last_part_of_path(result$gencode_gtf)
+    result$gencode_gtf <- base::paste0(parent_dir, '/', gencode_name)
+  }
 
   return(result)
 }
@@ -219,10 +223,24 @@ select_at_most_n_rows_of_table <- function(table, max_rows) {
   selected <- base::list()
   names <- base::names(table)
   for (name in names) {
-    selected[[name]] <- table[[name]][1:max_rows]
+    num_values <- base::length(table[[name]])
+    num_selected <- base::min(num_values, max_rows)
+    selected[[name]] <- table[[name]][1:num_selected]
   }
 
   return(selected)
+}
+
+search_table_by_column <- function(table, column, key) {
+  names <- base::names(table)
+  found_column <- base::sum(names == column) == 1
+  if (!found_column) {
+    return(table)
+  }
+
+  matches <- base::grepl(key, table[[column]], ignore.case=TRUE)
+  table <- table[matches, ]
+  return(table)
 }
 
 sort_table_by_column <- function(table, column, decreasing) {
@@ -324,7 +342,15 @@ create_gtf_for_asms <- function(event_dir, out_dir) {
 update_differential_isoforms_headers <- function(diff_isos, out_dir) {
   out_path <- base::paste0(out_dir, '/diff_isos_modified_headers.tsv')
   command <- 'sed'
-  sed_script <- '\'s/asm_id\tgene_id\tisoform_id/gene_id\torig_gene_id\tfeature_id/\''
+  ## gene_name column was added after rMATS-long v2.0.1
+  asm_tab_gene <- 'asm_id\tgene_id'
+  tab_or_tab_name_tab <- '\\(\t\\|\tgene_name\t\\)'
+  gene_tab_orig <- 'gene_id\torig_gene_id'
+  sed_script <- base::paste0("'", 's/',
+                             asm_tab_gene, tab_or_tab_name_tab, 'isoform_id',
+                             '/',
+                             gene_tab_orig, '\\1', 'feature_id',
+                             '/', "'")
   args <- base::c(sed_script, diff_isos)
   error <- print_and_run_command_with_stdout_redirect(
       command, args, out_path,
@@ -512,6 +538,7 @@ generate_in_gene_plot <- function(
     gene_id, asm_id, main_dir, event_dir, modified_diff_isos, asm_gtf,
     combined_gtf, plot_file_type, intron_scaling, max_transcripts) {
   gene_out_dir <- get_gene_out_dir(main_dir, gene_id)
+  dir.create(gene_out_dir, recursive=TRUE)
   tmp_out_dir <- base::paste0(gene_out_dir, '/', 'tmp_in_gene')
   in_gene_plot_path <- base::paste0(gene_out_dir, '/', asm_id, '_in_gene.png')
   in_gene_sj_plot_path <- base::paste0(gene_out_dir, '/', asm_id,
@@ -534,6 +561,8 @@ generate_in_gene_plot <- function(
     start_coord <- event_result$start
     end_coord <- event_result$end
   }
+
+  dir.create(tmp_out_dir, recursive=TRUE)
 
   command <- 'rmats-long'
   script <- 'visualize_isoforms.py'
@@ -567,6 +596,7 @@ generate_simple_graph_plot <- function(gene_id, asm_id, main_dir, asm_gtf,
                                        isoform_colors, intron_scaling,
                                        equal_spacing, color_first) {
   gene_out_dir <- get_gene_out_dir(main_dir, gene_id)
+  dir.create(gene_out_dir, recursive=TRUE)
   out_path <- base::paste0(gene_out_dir, '/', asm_id, '_simple_graph.png')
   command <- 'rmats-long'
   script <- 'plot_simple_splice_graph.py'
@@ -588,6 +618,7 @@ generate_simple_graph_plot <- function(gene_id, asm_id, main_dir, asm_gtf,
 
 generate_graph_plot <- function(gene_id, asm_id, main_dir, event_dir) {
   gene_out_dir <- get_gene_out_dir(main_dir, gene_id)
+  dir.create(gene_out_dir, recursive=TRUE)
   out_path <- base::paste0(gene_out_dir, '/', asm_id, '_graph.png')
   command <- 'rmats-long'
   script <- 'plot_splice_graph.py'
@@ -623,6 +654,7 @@ get_main_and_second_id_from_colors_tsv <- function(colors_tsv) {
 generate_diff_table <- function(gene_id, asm_id, main_dir, asm_gtf,
                                 isoform_colors) {
   gene_out_dir <- get_gene_out_dir(main_dir, gene_id)
+  dir.create(gene_out_dir, recursive=TRUE)
   id_result <- get_main_and_second_id_from_colors_tsv(isoform_colors)
   if (id_result$error != FALSE) {
     return(base::list(error=id_result$error, out_path=''))
@@ -726,7 +758,8 @@ server <- function(input, output, session) {
              alt='default image'),
         deleteFile=FALSE)
 
-      output$isoform_differences_table <- shiny::renderTable(get_default_table())
+      output$isoform_differences_table <- shiny::renderTable(get_default_table(),
+                                                             digits=-2)
 
       if (base::file.exists(file_paths$summary_plot)) {
           output$summary_pie_image <- shiny::renderImage(
@@ -749,28 +782,35 @@ server <- function(input, output, session) {
 
       if (base::file.exists(file_paths$diff_asms)) {
         asm_table <- get_table_from_file(file_paths$diff_asms)
-        limited_table <- select_at_most_n_rows_of_table(asm_table,
-                                                        input$asm_max_rows)
-        output$asm_stat_table <- shiny::renderTable(limited_table)
+        limited_asm_table <- select_at_most_n_rows_of_table(asm_table,
+                                                            input$asm_max_rows)
+        output$asm_stat_table <- shiny::renderTable(limited_asm_table, digits=-2)
         updateSelectInput(session=session, 'asm_sort_col_1',
                           choices=base::names(asm_table))
         updateSelectInput(session=session, 'asm_sort_col_2',
                           choices=base::names(asm_table))
+        updateSelectInput(session=session, 'asm_search_col',
+                          choices=base::names(asm_table))
       } else {
-        output$asm_stat_table <- shiny::renderTable(get_default_table())
+        output$asm_stat_table <- shiny::renderTable(get_default_table(),
+                                                    digits=-2)
       }
 
       if (base::file.exists(file_paths$diff_isos)) {
         iso_table <- get_table_from_file(file_paths$diff_isos)
-        limited_table <- select_at_most_n_rows_of_table(iso_table,
-                                                        input$iso_max_rows)
-        output$isoform_stat_table <- shiny::renderTable(limited_table)
+        limited_iso_table <- select_at_most_n_rows_of_table(iso_table,
+                                                            input$iso_max_rows)
+        output$isoform_stat_table <- shiny::renderTable(limited_iso_table,
+                                                        digits=-2)
         updateSelectInput(session=session, 'iso_sort_col_1',
                           choices=base::names(iso_table))
         updateSelectInput(session=session, 'iso_sort_col_2',
                           choices=base::names(iso_table))
+        updateSelectInput(session=session, 'iso_search_col',
+                          choices=base::names(iso_table))
       } else {
-        output$isoform_stat_table <- shiny::renderTable(get_default_table())
+        output$isoform_stat_table <- shiny::renderTable(get_default_table(),
+                                                        digits=-2)
       }
 
       bslib::nav_select('summary_navset', selected='summary_pie_tab',
@@ -789,6 +829,9 @@ server <- function(input, output, session) {
 
       if (base::file.exists(input$diff_asms)) {
         table <- get_table_from_file(input$diff_asms)
+        search_col <- input$asm_search_col
+        search_key <- input$asm_search_key
+        table <- search_table_by_column(table, search_col, search_key)
         sort_col_1 <- input$asm_sort_col_1
         sort_col_2 <- input$asm_sort_col_2
         sort_col_1_dec <- input$asm_sort_col_1_decreasing
@@ -797,7 +840,7 @@ server <- function(input, output, session) {
         table <- sort_table_by_column(table, sort_col_1, sort_col_1_dec)
         limited_table <- select_at_most_n_rows_of_table(table,
                                                         input$asm_max_rows)
-        output$asm_stat_table <- shiny::renderTable(limited_table)
+        output$asm_stat_table <- shiny::renderTable(limited_table, digits=-2)
       } else {
         shiny::showNotification(
           'No ASM result file found',
@@ -814,6 +857,9 @@ server <- function(input, output, session) {
 
       if (base::file.exists(input$diff_isos)) {
         table <- get_table_from_file(input$diff_isos)
+        search_col <- input$iso_search_col
+        search_key <- input$iso_search_key
+        table <- search_table_by_column(table, search_col, search_key)
         sort_col_1 <- input$iso_sort_col_1
         sort_col_2 <- input$iso_sort_col_2
         sort_col_1_dec <- input$iso_sort_col_1_decreasing
@@ -822,7 +868,7 @@ server <- function(input, output, session) {
         table <- sort_table_by_column(table, sort_col_1, sort_col_1_dec)
         limited_table <- select_at_most_n_rows_of_table(table,
                                                         input$iso_max_rows)
-        output$isoform_stat_table <- shiny::renderTable(limited_table)
+        output$isoform_stat_table <- shiny::renderTable(limited_table, digits=-2)
       } else {
         shiny::showNotification(
           'No isoform result file found',
@@ -844,7 +890,8 @@ server <- function(input, output, session) {
         gene_ids <- table$gene_id[matches]
         if (base::length(gene_ids) == 0) {
           shiny::showNotification(
-            base::paste0('"', input$asm_id, '" not found in isoform result file'),
+            base::paste0('"', input$asm_id,
+                         '" not found in isoform result file'),
             session=session, duration=NOTIFICATION_SECONDS, type='error')
         } else {
           found_gene_id <- gene_ids[1]
@@ -859,6 +906,91 @@ server <- function(input, output, session) {
       shiny::removeNotification(id='finding_gene', session=session)
     }),
     input$find_gene_id_for_asm
+  )
+
+  shiny::bindEvent(shiny::observe({
+      shiny::showNotification('Finding ASM ID...', session=session,
+                              duration=NULL, id='finding_asm')
+
+      found_asm_id <- ''
+      if (base::file.exists(input$diff_isos)) {
+        table <- get_table_from_file(input$diff_isos)
+        matches <- table$gene_id == input$gene_id
+        asm_ids <- table$asm_id[matches]
+        unique_asm_ids <- base::unique(asm_ids)
+        num_unique <- base::length(unique_asm_ids)
+        if (num_unique == 0) {
+          shiny::showNotification(
+            base::paste0('"', input$gene_id,
+                         '" not found in isoform result file'),
+            session=session, duration=NOTIFICATION_SECONDS, type='error')
+        } else if (num_unique > 1) {
+          comma_ids <- base::paste(unique_asm_ids, collapse=',')
+          shiny::showNotification(
+            base::paste0('"', input$gene_id, '" has ', num_unique, ' ASM IDs: ',
+                         comma_ids),
+            session=session, duration=NOTIFICATION_SECONDS, type='error')
+        } else {
+          found_asm_id <- unique_asm_ids[1]
+        }
+      } else {
+        shiny::showNotification(
+          'No isoform result file found',
+          session=session, duration=NOTIFICATION_SECONDS, type='error')
+      }
+      shiny::updateTextInput(session=session, 'asm_id',
+                             value=found_asm_id)
+      shiny::removeNotification(id='finding_asm', session=session)
+    }),
+    input$find_asm_id_for_gene_id
+  )
+
+  shiny::bindEvent(shiny::observe({
+      shiny::showNotification('Finding IDs...', session=session,
+                              duration=NULL, id='finding_ids')
+
+      found_asm_id <- ''
+      found_gene_id <- ''
+      if (base::file.exists(input$diff_isos)) {
+        table <- get_table_from_file(input$diff_isos)
+        has_gene_name <- 'gene_name' %in% base::names(table)
+        if (has_gene_name) {
+          matches <- table$gene_name == input$gene_name
+          asm_ids <- table$asm_id[matches]
+          unique_asm_ids <- base::unique(asm_ids)
+          num_unique <- base::length(unique_asm_ids)
+          if (num_unique == 0) {
+            shiny::showNotification(
+              base::paste0('"', input$gene_name,
+                           '" not found in isoform result file'),
+              session=session, duration=NOTIFICATION_SECONDS, type='error')
+          } else if (num_unique > 1) {
+            comma_ids <- base::paste(unique_asm_ids, collapse=',')
+            shiny::showNotification(
+              base::paste0('"', input$gene_name, '" has ', num_unique,
+                           ' ASM IDs: ', comma_ids),
+              session=session, duration=NOTIFICATION_SECONDS, type='error')
+          } else {
+            found_asm_id <- unique_asm_ids[1]
+            found_gene_id <- table$gene_id[matches][1]
+          }
+        } else {
+          shiny::showNotification(
+            'No gene_name column in isoform result file',
+            session=session, duration=NOTIFICATION_SECONDS, type='error')
+        }
+      } else {
+        shiny::showNotification(
+          'No isoform result file found',
+          session=session, duration=NOTIFICATION_SECONDS, type='error')
+      }
+      shiny::updateTextInput(session=session, 'asm_id',
+                             value=found_asm_id)
+      shiny::updateTextInput(session=session, 'gene_id',
+                             value=found_gene_id)
+      shiny::removeNotification(id='finding_ids', session=session)
+    }),
+    input$find_ids_for_gene_name
   )
 
   shiny::bindEvent(shiny::observe({
@@ -897,8 +1029,8 @@ server <- function(input, output, session) {
       } else {
         result <- generate_abundance_and_structure_plots(
             input$gene_id, input$asm_id, input$main_directory, input$event_dir,
-            input$sample_total_tsv, input$count_tsv, input$diff_isos, input$group_1,
-            input$group_2, input$group_1_name, input$group_2_name,
+            input$sample_total_tsv, input$count_tsv, input$diff_isos,
+            input$group_1, input$group_2, input$group_1_name, input$group_2_name,
             plot_file_type, input$abundance_intron_scaling,
             input$abundance_max_transcripts)
       }
@@ -978,7 +1110,7 @@ server <- function(input, output, session) {
           type='error')
       } else {
         output$isoform_differences_table <- shiny::renderTable(
-            get_table_from_file(result$out_path))
+            get_table_from_file(result$out_path), digits=-2)
       }
       shiny::removeNotification(id='creating_diffs', session=session)
     }),
@@ -1026,5 +1158,134 @@ server <- function(input, output, session) {
       shiny::removeNotification(id='creating_graph', session=session)
     }),
     input$plot_graph_button
+  )
+
+  shiny::bindEvent(shiny::observe({
+      shiny::showNotification('Checking for plots...', session=session,
+                              duration=NULL, id='checking_plots')
+
+      asm_id <- input$asm_id
+      gene_out_dir <- get_gene_out_dir(input$main_directory, input$gene_id)
+
+      abun_plot_path <- base::paste0(gene_out_dir, '/', asm_id, '_abundance.png')
+      struct_plot_path <- base::paste0(gene_out_dir, '/', asm_id,
+                                       '_structure.png')
+      struct_sj_plot_path <- base::paste0(gene_out_dir, '/', asm_id,
+                                          '_structure_sj_counts.png')
+      in_gene_plot_path <- base::paste0(gene_out_dir, '/', asm_id,
+                                        '_in_gene.png')
+      in_gene_sj_plot_path <- base::paste0(gene_out_dir, '/', asm_id,
+                                           '_in_gene_sj_counts.png')
+      simple_graph_path <- base::paste0(gene_out_dir, '/', asm_id,
+                                        '_simple_graph.png')
+      graph_path <- base::paste0(gene_out_dir, '/', asm_id, '_graph.png')
+
+      default_image_path <- get_default_image()
+      if (base::file.exists(abun_plot_path)) {
+        output$abundance_image <- shiny::renderImage(
+          base::list(src=abun_plot_path, width='1000', height='700',
+                     alt='abundance_plot'),
+          deleteFile=FALSE)
+      } else {
+        output$abundance_image <- shiny::renderImage(
+          base::list(src=default_image_path, width='1002', height='702',
+                     alt='default image'),
+          deleteFile=FALSE)
+      }
+
+      if (base::file.exists(struct_plot_path)) {
+        output$structure_image <- shiny::renderImage(
+          base::list(src=struct_plot_path, width='1000', height='333',
+                     alt='structure_plot'),
+          deleteFile=FALSE)
+      } else {
+        output$structure_image <- shiny::renderImage(
+          base::list(src=default_image_path, width='1002', height='335',
+                     alt='default image'),
+          deleteFile=FALSE)
+      }
+
+      if (base::file.exists(struct_sj_plot_path)) {
+        output$structure_sj_image <- shiny::renderImage(
+          base::list(src=struct_sj_plot_path, width='1000', height='333',
+                     alt='structure_sj_plot'),
+          deleteFile=FALSE)
+      } else {
+        output$structure_sj_image <- shiny::renderImage(
+          base::list(src=default_image_path, width='1002', height='335',
+                     alt='default image'),
+          deleteFile=FALSE)
+      }
+
+      if (base::file.exists(in_gene_plot_path)) {
+        output$in_gene_image <- shiny::renderImage(
+          base::list(src=in_gene_plot_path, width='1000', height='333',
+                     alt='in_gene_plot'),
+          deleteFile=FALSE)
+      } else {
+        output$in_gene_image <- shiny::renderImage(
+          base::list(src=default_image_path, width='1002', height='335',
+                     alt='default image'),
+          deleteFile=FALSE)
+      }
+
+      if (base::file.exists(in_gene_sj_plot_path)) {
+        output$in_gene_sj_image <- shiny::renderImage(
+          base::list(src=in_gene_sj_plot_path, width='1000', height='333',
+                     alt='in_gene_sj_plot'),
+          deleteFile=FALSE)
+      } else {
+        output$in_gene_sj_image <- shiny::renderImage(
+          base::list(src=default_image_path, width='1002', height='335',
+                     alt='default image'),
+          deleteFile=FALSE)
+      }
+
+      if (base::file.exists(simple_graph_path)) {
+        output$simple_graph_image <- shiny::renderImage(
+          base::list(src=simple_graph_path, width='1000', height='500',
+                     alt='splice_graph_plot'),
+          deleteFile=FALSE)
+      } else {
+        output$simple_graph_image <- shiny::renderImage(
+          base::list(src=default_image_path, width='1002', height='502',
+                     alt='default image'),
+          deleteFile=FALSE)
+      }
+
+      if (base::file.exists(graph_path)) {
+        output$graph_image <- shiny::renderImage(
+          base::list(src=graph_path, width='1000', height='333',
+                     alt='splice_graph_plot'),
+          deleteFile=FALSE)
+      } else {
+        output$graph_image <- shiny::renderImage(
+          base::list(src=default_image_path, width='1002', height='335',
+                     alt='default image'),
+          deleteFile=FALSE)
+      }
+
+      table_was_set <- FALSE
+      if (base::file.exists(gene_out_dir)) {
+        gene_files <- base::list.files(gene_out_dir)
+        diff_pattern <- base::paste0(asm_id, '_isoform_differences_')
+        for (name in gene_files) {
+          if (base::grepl(diff_pattern, name, fixed=TRUE)) {
+            diff_path <- base::paste0(gene_out_dir, '/', name)
+            output$isoform_differences_table <- shiny::renderTable(
+              get_table_from_file(diff_path), digits=-2)
+            table_was_set <- TRUE
+            break
+          }
+        }
+      }
+      if (!table_was_set) {
+        output$isoform_differences_table <- shiny::renderTable(
+          get_default_table(), digits=-2)
+      }
+
+      shiny::removeNotification(id='checking_plots', session=session)
+    }),
+    input$check_for_existing_plots
   )
 }

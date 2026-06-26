@@ -324,7 +324,8 @@ class BaseTest(unittest.TestCase):
                           output_full_gene_asm=False,
                           output_basic_events=False,
                           simplify_gene_isoform_endpoints=False,
-                          filter_gene_isoforms_by_edge=False):
+                          filter_gene_isoforms_by_edge=False,
+                          novel_junctions=False):
         event_dir = os.path.join(out_dir, 'events')
         command = [
             self._rmats_long_exe, 'detect_splicing_events.py', '--gtf-dir',
@@ -355,6 +356,9 @@ class BaseTest(unittest.TestCase):
         if filter_gene_isoforms_by_edge:
             command.append('--filter-gene-isoforms-by-edge')
 
+        if novel_junctions:
+            command.append('--novel-junctions')
+
         log_path = os.path.join(log_dir, 'detect_events.log')
         run_command(command, log=log_path)
         return event_dir
@@ -370,6 +374,30 @@ class BaseTest(unittest.TestCase):
         run_command(command, log=log_path)
         return asm_counts_dir
 
+    def run_filter_isoforms(self,
+                            event_dir,
+                            asm_counts_dir,
+                            out_dir,
+                            log_dir,
+                            all_sjs_count=None):
+        filtered_event_dir = os.path.join(out_dir, 'filtered_events')
+        filtered_counts_dir = os.path.join(out_dir, 'filtered_read_counts')
+        command = [
+            self._rmats_long_exe, 'filter_isoforms_with_counts.py',
+            '--event-dir', event_dir, '--asm-counts-dir', asm_counts_dir,
+            '--out-event-dir', filtered_event_dir, '--out-counts-dir',
+            filtered_counts_dir
+        ]
+        if all_sjs_count is not None:
+            command.extend(['--all-sjs-count', str(all_sjs_count)])
+
+        log_path = os.path.join(log_dir, 'filter_isoforms.log')
+        run_command(command, log=log_path)
+        return {
+            'event_dir': filtered_event_dir,
+            'counts_dir': filtered_counts_dir
+        }
+
     def run_rmats_long(self,
                        group_1,
                        group_2,
@@ -382,7 +410,8 @@ class BaseTest(unittest.TestCase):
                        average_cpm_per_group=None,
                        min_cpm_per_group=None,
                        asm_proportion_gene=None,
-                       average_reads_per_group=None):
+                       average_reads_per_group=None,
+                       covars=None):
         rmats_long_out = os.path.join(out_dir, 'rmats_long')
         command = [
             self._rmats_long_exe, 'rmats_long.py', '--asm-counts-dir',
@@ -410,6 +439,9 @@ class BaseTest(unittest.TestCase):
             command.extend(
                 ['--average-reads-per-group',
                  str(average_reads_per_group)])
+
+        if covars is not None:
+            command.extend(['--covar-tsv', covars])
 
         log_path = os.path.join(log_dir, 'rmats_long.log')
         run_command(command, log=log_path)
@@ -447,6 +479,9 @@ class BaseTest(unittest.TestCase):
         counts = dict()
         file_names = os.listdir(dir_path)
         for name in file_names:
+            if not name.startswith('chr_id_'):
+                continue
+
             counts_tsv = os.path.join(dir_path, name)
             self._parse_read_compatibility_tsv(counts_tsv, counts)
 

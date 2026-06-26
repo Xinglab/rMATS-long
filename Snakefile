@@ -18,27 +18,174 @@ def result_dir():
     return os.path.join('results', config['run_name'])
 
 
+def gtf_result_dir():
+    return os.path.join(result_dir(), 'annotation')
+
+
+def gtf_dir_details():
+    config_dir = config.get('annotation_dir')
+    if config_dir:
+        return {'path': config_dir, 'from_config': True}
+
+    path = gtf_result_dir()
+    return {'path': path, 'from_config': False}
+
+
+def asm_events_result_dir():
+    return os.path.join(result_dir(), 'asm_events')
+
+
+def asm_events_dir_details():
+    mode = 'asm'
+    will_filter = will_filtered_counts_be_created_for_mode(mode)
+    if will_filter:
+        path = filtered_event_dir_for_mode(mode)
+        return {'path': path, 'from_config': False}
+
+    config_dir = config.get('predefined_asm_events')
+    if config_dir:
+        return {'path': config_dir, 'from_config': True}
+
+    path = asm_events_result_dir()
+    return {'path': path, 'from_config': False}
+
+
+def basic_events_result_dir():
+    return os.path.join(result_dir(), 'basic_events')
+
+
+def basic_events_dir_details():
+    mode = 'basic'
+    will_filter = will_filtered_counts_be_created_for_mode(mode)
+    if will_filter:
+        path = filtered_event_dir_for_mode(mode)
+        return {'path': path, 'from_config': False}
+
+    config_dir = config.get('predefined_basic_events')
+    if config_dir:
+        return {'path': config_dir, 'from_config': True}
+
+    path = basic_events_result_dir()
+    return {'path': path, 'from_config': False}
+
+
+def full_length_events_result_dir():
+    return os.path.join(result_dir(), 'full_length_events')
+
+
+def full_length_events_dir_details():
+    mode = 'full_length'
+    will_filter = will_filtered_counts_be_created_for_mode(mode)
+    if will_filter:
+        path = filtered_event_dir_for_mode(mode)
+        return {'path': path, 'from_config': False}
+
+    config_dir = config.get('predefined_full_length_events')
+    if config_dir:
+        return {'path': config_dir, 'from_config': True}
+
+    path = full_length_events_result_dir()
+    return {'path': path, 'from_config': False}
+
+
+def all_sjs_count_for_mode(mode):
+    if mode == 'full_length':
+        config_key = 'full_length_min_all_sjs_count'
+    elif mode == 'asm':
+        config_key = 'asms_min_all_sjs_count'
+    elif mode == 'basic':
+        config_key = 'basic_min_all_sjs_count'
+    else:
+        raise Exception('Unexpected event mode: {}'.format(mode))
+
+    return config.get(config_key, 0)
+
+
+def will_filtered_counts_be_created_for_mode(mode):
+    if mode == 'asm':
+        config_key = 'predefined_asm_events'
+    elif mode == 'basic':
+        config_key = 'predefined_basic_events'
+    elif mode == 'full_length':
+        config_key = 'predefined_full_length_events'
+    else:
+        raise Exception('Unexpected event mode: {}'.format(mode))
+
+    if config.get(config_key):
+        return False
+
+    all_sjs_count = all_sjs_count_for_mode(mode)
+    return all_sjs_count >= 1
+
+
+def unfiltered_event_dir_for_mode(mode):
+    return os.path.join(result_dir(), '{}_events'.format(mode))
+
+
+def filtered_event_dir_for_mode(mode):
+    return os.path.join(result_dir(), '{}_events_filtered'.format(mode))
+
+
+def unfiltered_counts_dir_for_mode(mode):
+    return os.path.join(result_dir(), '{}_counts'.format(mode))
+
+
+def filtered_counts_dir_for_mode(mode):
+    return os.path.join(result_dir(), '{}_counts_filtered'.format(mode))
+
+
+def final_counts_dir_for_mode(mode):
+    will_filter = will_filtered_counts_be_created_for_mode(mode)
+    if will_filter:
+        return filtered_counts_dir_for_mode(mode)
+
+    return unfiltered_counts_dir_for_mode(mode)
+
+
 def all_input(wildcards):
     inputs = dict()
     quant_full = config.get('quantify_full_length_transcripts')
     quant_asms = config.get('quantify_asms')
     quant_basic = config.get('quantify_basic_events')
+    count_compat = config.get('count_compatible_transcripts_by_asm')
+    two_groups = bool(config.get('group_2_samples'))
     if quant_full:
-        inputs['rmats_long_full_len'] = os.path.join(
-            result_dir(), 'rmats_long_full_length', 'results_by_gene')
+        if two_groups:
+            inputs['rmats_long_full_len'] = os.path.join(
+                result_dir(), 'rmats_long_full_length', 'results_by_gene')
+        else:
+            full_events_details = full_length_events_dir_details()
+            if not full_events_details['from_config']:
+                inputs['full_len_events'] = full_events_details['path']
 
     if quant_asms:
-        inputs['rmats_long_asm'] = os.path.join(
-            result_dir(), 'rmats_long_asm', 'results_by_gene')
         inputs['asm_gtf'] = os.path.join(result_dir(), 'asm.gtf')
+        if two_groups:
+            inputs['rmats_long_asm'] = os.path.join(
+                result_dir(), 'rmats_long_asm', 'results_by_gene')
+            inputs['distal'] = os.path.join(result_dir(),
+                                            'distal_coupling_stats.tsv')
+        else:
+            asm_events_details = asm_events_dir_details()
+            if not asm_events_details['from_config']:
+                inputs['asm_events'] = asm_events_details['path']
 
     if quant_basic:
-        inputs['rmats_long_basic'] = os.path.join(
-            result_dir(), 'rmats_long_basic', 'results_by_gene')
         inputs['basic_gtf'] = os.path.join(result_dir(), 'basic_events.gtf')
+        if two_groups:
+            inputs['rmats_long_basic'] = os.path.join(
+                result_dir(), 'rmats_long_basic', 'results_by_gene')
+        else:
+            basic_events_details = basic_events_dir_details()
+            if not basic_events_details['from_config']:
+                inputs['basic_events'] = basic_events_details['path']
 
-    if quant_full and quant_asms:
+    if quant_full and quant_asms and two_groups:
         inputs['venn'] = os.path.join(result_dir(), 'significant_genes_venn.png')
+
+    if count_compat:
+        inputs['compat'] = os.path.join(result_dir(),
+                                        'compatible_transcripts_by_asm.tsv')
 
     return inputs
 
@@ -157,11 +304,48 @@ rule clean_espresso_gtf:
         ' 1> {log.out}'
         ' 2> {log.err}'
 
+
+def event_dir_details_for_mode(mode):
+    if mode == 'asm':
+        return asm_events_dir_details()
+    if mode == 'basic':
+        return basic_events_dir_details()
+    if mode == 'full_length':
+        return full_length_events_dir_details()
+
+    raise Exception('Unexpected event mode: {}'.format(mode))
+
+
+def count_reads_for_asms_input(wildcards):
+    inputs = dict()
+    inputs['align_dir'] = os.path.join(result_dir(), 'alignments')
+    will_filter = will_filtered_counts_be_created_for_mode(wildcards.mode)
+    if will_filter:
+        inputs['event_dir'] = unfiltered_event_dir_for_mode(wildcards.mode)
+    else:
+        event_details = event_dir_details_for_mode(wildcards.mode)
+        if not event_details['from_config']:
+            inputs['event_dir'] = event_details['path']
+
+    gtf_details = gtf_dir_details()
+    if not gtf_details['from_config']:
+        inputs['gtf_dir'] = gtf_details['path']
+
+    return inputs
+
+
+def count_reads_for_asms_event_dir_param(wildcards):
+    will_filter = will_filtered_counts_be_created_for_mode(wildcards.mode)
+    if will_filter:
+        return unfiltered_event_dir_for_mode(wildcards.mode)
+    else:
+        event_details = event_dir_details_for_mode(wildcards.mode)
+        return event_details['path']
+
+
 rule count_reads_for_asms:
     input:
-        event_dir=os.path.join(result_dir(), '{mode}_events'),
-        gtf_dir=os.path.join(result_dir(), 'annotation'),
-        align_dir=os.path.join(result_dir(), 'alignments'),
+        unpack(count_reads_for_asms_input),
     output:
         count_dir=directory(os.path.join(result_dir(), '{mode}_counts')),
     log:
@@ -170,6 +354,8 @@ rule count_reads_for_asms:
     params:
         conda_wrapper=config['conda_wrapper'],
         script='count_reads_for_asms.py',
+        gtf_dir=gtf_dir_details()['path'],
+        event_dir=count_reads_for_asms_event_dir_param,
     threads: config['count_reads_for_asms_threads']
     resources:
         mem_mb=config['count_reads_for_asms_mem_gb'] * 1024,
@@ -177,8 +363,8 @@ rule count_reads_for_asms:
     shell:
         '{params.conda_wrapper} rmats-long'
         ' {params.script}'
-        ' --event-dir {input.event_dir}'
-        ' --gtf-dir {input.gtf_dir}'
+        ' --event-dir {params.event_dir}'
+        ' --gtf-dir {params.gtf_dir}'
         ' --align-dir {input.align_dir}'
         ' --out-dir {output.count_dir}'
         ' --num-threads {threads}'
@@ -189,7 +375,10 @@ rule count_reads_for_asms:
 def detect_splicing_events_input(wildcards):
     inputs = dict()
     result_path = result_dir()
-    inputs['gtf_dir'] = os.path.join(result_path, 'annotation')
+    gtf_details = gtf_dir_details()
+    if not gtf_details['from_config']:
+        inputs['gtf_dir'] = gtf_details['path']
+
     inputs['align_dir'] = os.path.join(result_path, 'alignments')
 
     return inputs
@@ -266,6 +455,14 @@ def output_strict_only_param(wildcards):
     return ''
 
 
+def novel_junctions_param():
+    use_novel_junctions = config.get('use_novel_junctions')
+    if not use_novel_junctions:
+        return ''
+
+    return '--novel-junctions'
+
+
 rule detect_splicing_events:
     input:
         unpack(detect_splicing_events_input),
@@ -277,6 +474,7 @@ rule detect_splicing_events:
     params:
         conda_wrapper=config['conda_wrapper'],
         script='detect_splicing_events.py',
+        gtf_dir=gtf_dir_details()['path'],
         min_reads=min_reads_per_edge_param(),
         max_nodes=max_nodes_in_event_param(),
         max_paths=max_paths_in_event_param(),
@@ -285,6 +483,7 @@ rule detect_splicing_events:
         simplify_gene_isoform_endpoints=simplify_gene_isoform_endpoints_param,
         filter_gene_isoforms_by_edge=filter_gene_isoforms_by_edge_param,
         output_strict_only=output_strict_only_param,
+        novel_junctions=novel_junctions_param(),
     threads: config['detect_splicing_events_threads']
     resources:
         mem_mb=config['detect_splicing_events_mem_gb'] * 1024,
@@ -292,7 +491,7 @@ rule detect_splicing_events:
     shell:
         '{params.conda_wrapper} rmats-long'
         ' {params.script}'
-        ' --gtf-dir {input.gtf_dir}'
+        ' --gtf-dir {params.gtf_dir}'
         ' --align-dir {input.align_dir}'
         ' --out-dir {output.event_dir}'
         ' --num-threads {threads}'
@@ -304,12 +503,23 @@ rule detect_splicing_events:
         ' {params.simplify_gene_isoform_endpoints}'
         ' {params.filter_gene_isoforms_by_edge}'
         ' {params.output_strict_only}'
+        ' {params.novel_junctions}'
         ' 1> {log.out}'
         ' 2> {log.err}'
 
+
+def create_gtf_from_asm_definitions_input(wildcards):
+    inputs = dict()
+    event_details = asm_events_dir_details()
+    if not event_details['from_config']:
+        inputs['event_dir'] = event_details['path']
+
+    return inputs
+
+
 rule create_gtf_from_asm_definitions:
     input:
-        event_dir=os.path.join(result_dir(), 'asm_events'),
+        unpack(create_gtf_from_asm_definitions_input),
     output:
         asm_gtf=os.path.join(result_dir(), 'asm.gtf'),
     log:
@@ -318,20 +528,31 @@ rule create_gtf_from_asm_definitions:
     params:
         conda_wrapper=config['conda_wrapper'],
         script='create_gtf_from_asm_definitions.py',
+        event_dir=asm_events_dir_details()['path'],
     resources:
         mem_mb=config['create_gtf_from_asm_definitions_mem_gb'] * 1024,
         time_hours=config['create_gtf_from_asm_definitions_time_hr'],
     shell:
         '{params.conda_wrapper} rmats-long'
         ' {params.script}'
-        ' --event-dir {input.event_dir}'
+        ' --event-dir {params.event_dir}'
         ' --out-gtf {output.asm_gtf}'
         ' 1> {log.out}'
         ' 2> {log.err}'
 
+
+def create_gtf_from_basic_event_definitions_input(wildcards):
+    inputs = dict()
+    event_details = basic_events_dir_details()
+    if not event_details['from_config']:
+        inputs['event_dir'] = event_details['path']
+
+    return inputs
+
+
 rule create_gtf_from_basic_event_definitions:
     input:
-        event_dir=os.path.join(result_dir(), 'basic_events'),
+        unpack(create_gtf_from_basic_event_definitions_input),
     output:
         basic_events_gtf=os.path.join(result_dir(), 'basic_events.gtf'),
     log:
@@ -342,26 +563,37 @@ rule create_gtf_from_basic_event_definitions:
     params:
         conda_wrapper=config['conda_wrapper'],
         script='create_gtf_from_asm_definitions.py',
+        event_dir=basic_events_dir_details()['path'],
     resources:
         mem_mb=config['create_gtf_from_asm_definitions_mem_gb'] * 1024,
         time_hours=config['create_gtf_from_asm_definitions_time_hr'],
     shell:
         '{params.conda_wrapper} rmats-long'
         ' {params.script}'
-        ' --event-dir {input.event_dir}'
+        ' --event-dir {params.event_dir}'
         ' --out-gtf {output.basic_events_gtf}'
         ' 1> {log.out}'
         ' 2> {log.err}'
 
 
-def num_inputs_by_sample():
+def simplified_alignment_details_by_sample():
     by_sample = dict()
     config_keys = ['group_1_samples', 'group_2_samples']
     for config_key in config_keys:
-        by_name = config.get(config_key)
-        for sample, details in by_name.items():
-            num_inputs = len(details)
-            by_sample[sample] = num_inputs
+        by_name = config.get(config_key, dict())
+        for sample, inputs in by_name.items():
+            sample_inputs = list()
+            by_sample[sample] = sample_inputs
+            for input_i, input_file in enumerate(inputs):
+                simplified = input_file.get('simplified')
+                if simplified:
+                    details = {'path': simplified, 'from_config': True}
+                else:
+                    file_name = '{}_{}_simplified.tsv'.format(sample, input_i)
+                    path = os.path.join(result_dir(), 'simplified', file_name)
+                    details = {'path': path, 'from_config': False}
+
+                sample_inputs.append(details)
 
     return by_sample
 
@@ -371,15 +603,13 @@ rule write_samples_tsv:
     output:
         samples_tsv=os.path.join(result_dir(), 'samples.tsv'),
     params:
-        num_inputs_by_sample=num_inputs_by_sample(),
+        details_by_sample=simplified_alignment_details_by_sample(),
         result_dir=result_dir(),
     run:
         with open(output.samples_tsv, 'wt') as handle:
-            for sample, num_inputs in params.num_inputs_by_sample.items():
-                for i in range(num_inputs):
-                    file_name = '{}_{}_simplified.tsv'.format(sample, i)
-                    path = os.path.join(params.result_dir, 'simplified',
-                                        file_name)
+            for sample, inputs in params.details_by_sample.items():
+                for details in inputs:
+                    path = details['path']
                     tabbed = '\t'.join([sample, path])
                     handle.write('{}\n'.format(tabbed))
 
@@ -387,14 +617,19 @@ rule write_samples_tsv:
 def organize_alignment_info_input(wildcards):
     inputs = dict()
     result_path = result_dir()
-    inputs['gtf_dir'] = os.path.join(result_path, 'annotation')
+    gtf_details = gtf_dir_details()
+    if not gtf_details['from_config']:
+        inputs['gtf_dir'] = gtf_details['path']
+
     inputs['samples_tsv'] = os.path.join(result_path, 'samples.tsv')
     simplified_tsvs = list()
-    num_by_sample = num_inputs_by_sample()
-    for sample, num_inputs in num_by_sample.items():
-        for i in range(num_inputs):
-            file_name = '{}_{}_simplified.tsv'.format(sample, i)
-            path = os.path.join(result_path, 'simplified', file_name)
+    details_by_sample = simplified_alignment_details_by_sample()
+    for sample, sample_inputs in details_by_sample.items():
+        for details in sample_inputs:
+            if details['from_config']:
+                continue
+
+            path = details['path']
             simplified_tsvs.append(path)
 
     inputs['simplified_tsvs'] = simplified_tsvs
@@ -412,15 +647,18 @@ rule organize_alignment_info:
     params:
         conda_wrapper=config['conda_wrapper'],
         script='organize_alignment_info_by_gene_and_chr.py',
+        gtf_dir=gtf_dir_details()['path'],
+    threads: config['organize_alignment_info_threads']
     resources:
         mem_mb=config['organize_alignment_info_mem_gb'] * 1024,
         time_hours=config['organize_alignment_info_time_hr'],
     shell:
         '{params.conda_wrapper} rmats-long'
         ' {params.script}'
-        ' --gtf-dir {input.gtf_dir}'
+        ' --gtf-dir {params.gtf_dir}'
         ' --out-dir {output.align_dir}'
         ' --samples-tsv {input.samples_tsv}'
+        ' --num-threads {threads}'
         ' 1> {log.out}'
         ' 2> {log.err}'
 
@@ -444,7 +682,7 @@ rule organize_gene_info:
     input:
         unpack(organize_gene_info_input),
     output:
-        gtf_dir=directory(os.path.join(result_dir(), 'annotation')),
+        gtf_dir=directory(gtf_result_dir()),
     log:
         out=os.path.join(result_dir(), 'organize_gene_info_log.out'),
         err=os.path.join(result_dir(), 'organize_gene_info_log.err'),
@@ -469,7 +707,7 @@ def simplify_alignment_info_input(wildcards):
     sample_i = int(wildcards.sample_i)
     config_keys = ['group_1_samples', 'group_2_samples']
     for config_key in config_keys:
-        by_name = config.get(config_key)
+        by_name = config.get(config_key, dict())
         details = by_name.get(sample)
         if not details:
             continue
@@ -518,6 +756,51 @@ rule simplify_alignment_info:
         ' {params.script}'
         ' --in-file {input.in_file}'
         ' --out-tsv {output.tsv}'
+        ' 1> {log.out}'
+        ' 2> {log.err}'
+
+
+def filter_isoforms_with_counts_input(wildcards):
+    inputs = dict()
+    inputs['in_counts'] = unfiltered_counts_dir_for_mode(wildcards.mode)
+    inputs['in_events'] = unfiltered_event_dir_for_mode(wildcards.mode)
+    return inputs
+
+
+def all_sjs_count_param(wildcards):
+    return all_sjs_count_for_mode(wildcards.mode)
+
+
+rule filter_isoforms_with_counts:
+    input:
+        unpack(filter_isoforms_with_counts_input),
+    output:
+        filt_events=directory(os.path.join(result_dir(),
+                                           '{mode}_events_filtered')),
+        filt_counts=directory(os.path.join(result_dir(),
+                                           '{mode}_counts_filtered')),
+    log:
+        out=os.path.join(result_dir(),
+                         'filter_isoforms_with_counts_{mode}_log.out'),
+        err=os.path.join(result_dir(),
+                         'filter_isoforms_with_counts_{mode}_log.err'),
+    params:
+        conda_wrapper=config['conda_wrapper'],
+        script='filter_isoforms_with_counts.py',
+        all_sjs_count=all_sjs_count_param,
+    threads: config['filter_isoforms_with_counts_threads']
+    resources:
+        mem_mb=config['filter_isoforms_with_counts_mem_gb'] * 1024,
+        time_hours=config['filter_isoforms_with_counts_time_hr'],
+    shell:
+        '{params.conda_wrapper} rmats-long'
+        ' {params.script}'
+        ' --event-dir {input.in_events}'
+        ' --asm-counts-dir {input.in_counts}'
+        ' --out-event-dir {output.filt_events}'
+        ' --out-counts-dir {output.filt_counts}'
+        ' --all-sjs-count {params.all_sjs_count}'
+        ' --num-threads {threads}'
         ' 1> {log.out}'
         ' 2> {log.err}'
 
@@ -628,7 +911,7 @@ def min_cpm_per_group_param():
 
 def asm_proportion_of_gene_param():
     asm_prop = config.get('asm_proportion_of_gene')
-    if not asm_prop:
+    if asm_prop is None:
         return ''
 
     return '--asm-proportion-of-gene {}'.format(asm_prop)
@@ -636,14 +919,24 @@ def asm_proportion_of_gene_param():
 
 def rmats_long_input(wildcards):
     inputs = dict()
+    gtf_details = gtf_dir_details()
+    if not gtf_details['from_config']:
+        inputs['gtf_dir'] = gtf_details['path']
+
     inputs['align_dir'] = os.path.join(result_dir(), 'alignments')
-    counts = '{}_counts'.format(wildcards.mode)
-    inputs['asm_counts'] = os.path.join(result_dir(), counts)
-    event_dir = '{}_events'.format(wildcards.mode)
-    inputs['event_dir'] = os.path.join(result_dir(), event_dir)
+    inputs['asm_counts'] = final_counts_dir_for_mode(wildcards.mode)
+    event_details = event_dir_details_for_mode(wildcards.mode)
+    if not event_details['from_config']:
+        inputs['event_dir'] = event_details['path']
+
     inputs['group_1'] = os.path.join(result_dir(), 'group_1.txt')
     inputs['group_2'] = os.path.join(result_dir(), 'group_2.txt')
     return inputs
+
+
+def rmats_long_event_dir_param(wildcards):
+    event_details = event_dir_details_for_mode(wildcards.mode)
+    return event_details['path']
 
 
 # diff_iso_filt_cp is used because rmats_long_plots will overwrite the
@@ -670,6 +963,8 @@ rule rmats_long:
     params:
         conda_wrapper=config['conda_wrapper'],
         script='rmats_long.py',
+        gtf_dir=gtf_dir_details()['path'],
+        event_dir=rmats_long_event_dir_param,
         out_dir=rmats_long_out_dir,
         adj_pvalue=adj_pvalue_param(),
         delta_proportion=delta_proportion_param(),
@@ -689,9 +984,10 @@ rule rmats_long:
     shell:
         '{params.conda_wrapper} rmats-long'
         ' {params.script}'
+        ' --gtf-dir {params.gtf_dir}'
         ' --align-dir {input.align_dir}'
         ' --asm-counts-dir {input.asm_counts}'
-        ' --event-dir {input.event_dir}'
+        ' --event-dir {params.event_dir}'
         ' --group-1 {input.group_1}'
         ' --group-2 {input.group_2}'
         ' --out-dir {params.out_dir}'
@@ -772,10 +1068,15 @@ def rmats_long_plots_summary_path_param(wildcards):
 
 def rmats_long_plots_input(wildcards):
     inputs = dict()
-    inputs['gtf_dir'] = os.path.join(result_dir(), 'annotation')
+    gtf_details = gtf_dir_details()
+    if not gtf_details['from_config']:
+        inputs['gtf_dir'] = gtf_details['path']
+
     inputs['align_dir'] = os.path.join(result_dir(), 'alignments')
-    event_dir = '{}_events'.format(wildcards.mode)
-    inputs['event_dir'] = os.path.join(result_dir(), event_dir)
+    event_details = event_dir_details_for_mode(wildcards.mode)
+    if not event_details['from_config']:
+        inputs['event_dir'] = event_details['path']
+
     inputs['gtf'] = get_combined_or_ref_gtf()
     inputs['group_1'] = os.path.join(result_dir(), 'group_1.txt')
     inputs['group_2'] = os.path.join(result_dir(), 'group_2.txt')
@@ -783,6 +1084,11 @@ def rmats_long_plots_input(wildcards):
     inputs['diff_iso'] = os.path.join(result_dir(), rmats_long_dir,
                                       'differential_isoforms.tsv')
     return inputs
+
+
+def rmats_long_plots_event_dir_param(wildcards):
+    event_details = event_dir_details_for_mode(wildcards.mode)
+    return event_details['path']
 
 
 rule rmats_long_plots:
@@ -797,6 +1103,8 @@ rule rmats_long_plots:
     params:
         conda_wrapper=config['conda_wrapper'],
         script='rmats_long.py',
+        gtf_dir=gtf_dir_details()['path'],
+        event_dir=rmats_long_plots_event_dir_param,
         out_dir=rmats_long_plots_out_dir,
         group_1_name=group_1_name_param(),
         group_2_name=group_2_name_param(),
@@ -821,9 +1129,9 @@ rule rmats_long_plots:
         ' && {params.conda_wrapper} rmats-long'
         ' {params.script}'
         ' --diff-transcripts {input.diff_iso}'
-        ' --gtf-dir {input.gtf_dir}'
+        ' --gtf-dir {params.gtf_dir}'
         ' --align-dir {input.align_dir}'
-        ' --event-dir {input.event_dir}'
+        ' --event-dir {params.event_dir}'
         ' --gencode-gtf {input.gtf}'
         ' --group-1 {input.group_1}'
         ' --group-2 {input.group_2}'
@@ -873,5 +1181,201 @@ rule plot_gene_sets:
         ' "{params.set_1_name}"'
         ' "{params.set_2_name}"'
         ' {output.venn}'
+        ' 1> {log.out}'
+        ' 2> {log.err}'
+
+
+def check_asm_coupling_py_input(wildcards):
+    inputs = dict()
+    inputs['asm_counts'] = final_counts_dir_for_mode('asm')
+    inputs['count_tsv'] = os.path.join(result_dir(), 'rmats_long_asm', 'count.tsv')
+    inputs['group_1'] = os.path.join(result_dir(), 'group_1.txt')
+    inputs['group_2'] = os.path.join(result_dir(), 'group_2.txt')
+    event_details = asm_events_dir_details()
+    if not event_details['from_config']:
+        inputs['event_dir'] = event_details['path']
+
+    return inputs
+
+
+rule check_asm_coupling_py:
+    input:
+        unpack(check_asm_coupling_py_input),
+    output:
+        counts=os.path.join(result_dir(), 'distal_coupling_counts.tsv'),
+        main_isoforms=os.path.join(result_dir(),
+                                   'distal_coupling_main_isoforms.tsv'),
+    log:
+        out=os.path.join(result_dir(), 'check_asm_coupling_py_log.out'),
+        err=os.path.join(result_dir(), 'check_asm_coupling_py_log.err'),
+    params:
+        conda_wrapper=config['conda_wrapper'],
+        script='check_asm_coupling.py',
+        event_dir=asm_events_dir_details()['path'],
+        group_1_name=group_1_name_param(),
+        group_2_name=group_2_name_param(),
+    resources:
+        mem_mb=config['check_asm_coupling_py_mem_gb'] * 1024,
+        time_hours=config['check_asm_coupling_py_time_hr'],
+    shell:
+        '{params.conda_wrapper} rmats-long'
+        ' {params.script}'
+        ' --event-dir {params.event_dir}'
+        ' --asm-counts-dir {input.asm_counts}'
+        ' --count-tsv {input.count_tsv}'
+        ' --group-1 {input.group_1}'
+        ' --group-2 {input.group_2}'
+        ' {params.group_1_name}'
+        ' {params.group_2_name}'
+        ' --out-tsv {output.counts}'
+        ' --isoform-out-tsv {output.main_isoforms}'
+        ' 1> {log.out}'
+        ' 2> {log.err}'
+
+
+def coupling_min_reads_per_group_param():
+    min_reads_per_group = config.get('coupling_min_reads_per_group')
+    if min_reads_per_group is None:
+        return ''
+
+    return str(min_reads_per_group)
+
+
+rule check_asm_coupling_r:
+    input:
+        counts=os.path.join(result_dir(), 'distal_coupling_counts.tsv'),
+    output:
+        stats=os.path.join(result_dir(), 'distal_coupling_stats.tsv'),
+    log:
+        out=os.path.join(result_dir(), 'check_asm_coupling_r_log.out'),
+        err=os.path.join(result_dir(), 'check_asm_coupling_r_log.err'),
+    params:
+        conda_wrapper=config['conda_wrapper'],
+        script='check_asm_coupling.R',
+        min_reads_per_group=coupling_min_reads_per_group_param(),
+    resources:
+        mem_mb=config['check_asm_coupling_r_mem_gb'] * 1024,
+        time_hours=config['check_asm_coupling_r_time_hr'],
+    shell:
+        '{params.conda_wrapper} rmats-long'
+        ' {params.script}'
+        ' {input.counts}'
+        ' {output.stats}'
+        ' {params.min_reads_per_group}'
+        ' 1> {log.out}'
+        ' 2> {log.err}'
+
+
+def create_alignments_from_events_input(wildcards):
+    inputs = dict()
+    event_details = full_length_event_details()
+    if not event_details['from_config']:
+        inputs['event_dir'] = event_details['path']
+
+
+rule create_alignments_from_events:
+    input:
+        unpack(create_alignments_from_events_input),
+    output:
+        aligns=directory(os.path.join(result_dir(),
+                                      'full_length_events_as_alignments')),
+    log:
+        out=os.path.join(result_dir(), 'create_alignments_from_events_log.out'),
+        err=os.path.join(result_dir(), 'create_alignments_from_events_log.err'),
+    params:
+        conda_wrapper=config['conda_wrapper'],
+        script='create_alignments_from_events.py',
+        event_dir=full_length_events_dir_details()['path'],
+    resources:
+        mem_mb=config['create_alignments_from_events_mem_gb'] * 1024,
+        time_hours=config['create_alignments_from_events_time_hr'],
+    shell:
+        '{params.conda_wrapper} rmats-long'
+        ' {params.script}'
+        ' --event-dir {params.event_dir}'
+        ' --out-dir {output.aligns}'
+        ' 1> {log.out}'
+        ' 2> {log.err}'
+
+
+def check_transcript_to_asm_compatibility_input(wildcards):
+    inputs = dict()
+    inputs['align_dir'] = os.path.join(result_dir(),
+                                       'full_length_events_as_alignments')
+    gtf_details = gtf_dir_details()
+    if not gtf_details['from_config']:
+        inputs['gtf_dir'] = gtf_details['path']
+
+    event_details = asm_events_dir_details()
+    if not event_details['from_config']:
+        inputs['event_dir'] = event_details['path']
+
+    return inputs
+
+
+rule check_transcript_to_asm_compatibility:
+    input:
+        unpack(check_transcript_to_asm_compatibility_input),
+    output:
+        compat_dir=directory(os.path.join(result_dir(),
+                                          'full_length_to_asm_compatibility')),
+    log:
+        out=os.path.join(result_dir(),
+                         'check_transcript_to_asm_compatibility_log.out'),
+        err=os.path.join(result_dir(),
+                         'check_transcript_to_asm_compatibility_log.err'),
+    params:
+        conda_wrapper=config['conda_wrapper'],
+        script='count_reads_for_asms.py',
+        gtf_dir=gtf_dir_details()['path'],
+        event_dir=asm_events_dir_details()['path'],
+    threads: config['check_transcript_to_asm_compatibility_threads']
+    resources:
+        mem_mb=config['check_transcript_to_asm_compatibility_mem_gb'] * 1024,
+        time_hours=config['check_transcript_to_asm_compatibility_time_hr'],
+    shell:
+        '{params.conda_wrapper} rmats-long'
+        ' {params.script}'
+        ' --event-dir {params.event_dir}'
+        ' --gtf-dir {params.gtf_dir}'
+        ' --align-dir {input.align_dir}'
+        ' --out-dir {output.compat_dir}'
+        ' --num-threads {threads}'
+        ' 1> {log.out}'
+        ' 2> {log.err}'
+
+
+def count_transcripts_for_asms_input(wildcards):
+    inputs = dict()
+    inputs['compat_dir'] = os.path.join(result_dir(),
+                                        'full_length_to_asm_compatibility')
+    event_details = asm_events_dir_details()
+    if not event_details['from_config']:
+        inputs['event_dir'] = event_details['path']
+
+    return inputs
+
+
+rule count_transcripts_for_asms:
+    input:
+        unpack(count_transcripts_for_asms_input),
+    output:
+        compat=os.path.join(result_dir(), 'compatible_transcripts_by_asm.tsv'),
+    log:
+        out=os.path.join(result_dir(), 'count_transcripts_for_asms_log.out'),
+        err=os.path.join(result_dir(), 'count_transcripts_for_asms_log.err'),
+    params:
+        conda_wrapper=config['conda_wrapper'],
+        script='count_transcripts_for_asms.py',
+        event_dir=asm_events_dir_details()['path'],
+    resources:
+        mem_mb=config['count_transcripts_for_asms_mem_gb'] * 1024,
+        time_hours=config['count_transcripts_for_asms_time_hr'],
+    shell:
+        '{params.conda_wrapper} rmats-long'
+        ' {params.script}'
+        ' --event-dir {params.event_dir}'
+        ' --transcript-compat-dir {input.compat_dir}'
+        ' --out-tsv {output.compat}'
         ' 1> {log.out}'
         ' 2> {log.err}'

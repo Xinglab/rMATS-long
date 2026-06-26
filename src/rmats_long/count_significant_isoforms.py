@@ -287,6 +287,30 @@ def print_message(isoform_count, asms, genes, pvalue_col_name, adj_pvalue,
     print(' '.join(message_parts))
 
 
+def find_matching_asm_row(asm, row, asm_iterator):
+    while True:
+        asm_row = next(asm_iterator, None)
+        if asm_row is None:
+            break
+
+        if asm_row['asm_id'] == asm:
+            return asm_row
+
+    raise Exception('matching ASM row not found for {}'.format(row))
+
+
+def find_matching_gene_row(gene, row, asm_iterator):
+    while True:
+        asm_row = next(asm_iterator, None)
+        if asm_row is None:
+            break
+
+        if asm_row['gene_id'] == gene:
+            return asm_row
+
+    raise Exception('matching gene row not found for {}'.format(row))
+
+
 def count_significant_isoforms_with_handles(
         transcript_handle, asm_handle, out_handle, adj_pvalue,
         use_unadjusted_pvalue, delta_proportion, average_reads_per_group,
@@ -331,10 +355,7 @@ def count_significant_isoforms_with_handles(
 
                 rows_for_asm = list()
                 current_asm = asm
-                asm_row = next(asm_iterator, None)
-                if (asm_row is None) or (asm_row['asm_id'] != asm):
-                    raise Exception(
-                        'matching ASM row not found for {}'.format(row))
+                asm_row = find_matching_asm_row(asm, row, asm_iterator)
         else:
             if gene != current_gene:
                 if rows_for_asm:
@@ -347,10 +368,7 @@ def count_significant_isoforms_with_handles(
                         out_handle)
 
                 rows_for_asm = list()
-                asm_row = next(asm_iterator, None)
-                if (asm_row is None) or (asm_row['gene_id'] != gene):
-                    raise Exception(
-                        'matching gene row not found for {}'.format(row))
+                asm_row = find_matching_gene_row(gene, row, asm_iterator)
 
         current_gene = gene
         rows_for_asm.append(row)
