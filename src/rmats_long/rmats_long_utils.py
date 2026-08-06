@@ -95,7 +95,11 @@ def find_gene_graph_in_graph_file(gene_id, path):
         for line in handle:
             line = line.rstrip('\n')
             if not found_gene:
-                if ('digraph' not in line) or (gene_id not in line):
+                if 'digraph' not in line:
+                    continue
+
+                line_gene = line.split()[2]
+                if line_gene != gene_id:
                     continue
 
                 found_gene = True
