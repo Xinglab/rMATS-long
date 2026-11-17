@@ -152,7 +152,7 @@ def parse_graph_line(parts):
         return None
 
     if parts[0] == 'strict':
-        return {'type': parts[1], 'name': parts[2]}
+        return {'type': parts[1]}
 
     if parts[0] in ['graph', 'edge']:
         type_str = parts[0]

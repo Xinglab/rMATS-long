@@ -1916,7 +1916,7 @@ def output_graph_description(gene, extra_node_details, show_counts,
     if not coordinates:
         return
 
-    write_line(out_handle, 'strict digraph {} {{'.format(gene))
+    write_line(out_handle, 'strict digraph "{}" {{'.format(gene))
     write_line(out_handle, 'graph [rankdir = "LR", splines = "line"];')
     write_line(out_handle, 'edge [arrowhead = "empty", fontsize = "10"];')
 

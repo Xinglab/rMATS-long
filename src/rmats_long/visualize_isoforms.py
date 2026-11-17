@@ -1182,10 +1182,12 @@ def parse_edge_weights_from_graph(gene_id, graph_file):
             break
 
         if tokens[:2] == ['strict', 'digraph']:
-            if tokens[2] != gene_id:
+            line_gene = tokens[2]
+            line_gene = rmats_long_utils.remove_double_quotes(line_gene)
+            if line_gene != gene_id:
                 raise Exception(
                     'Unexpected gene_id {} instead of {} in {}'.format(
-                        tokens[2], gene_id, graph_file))
+                        line_gene, gene_id, graph_file))
 
             continue
 
