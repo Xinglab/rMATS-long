@@ -99,6 +99,7 @@ def find_gene_graph_in_graph_file(gene_id, path):
                     continue
 
                 line_gene = line.split()[2]
+                line_gene = remove_double_quotes(line_gene)
                 if line_gene != gene_id:
                     continue
 
@@ -327,6 +328,13 @@ def format_gtf_attributes(attributes):
     return ' '.join(key_value_strings)
 
 
+def remove_double_quotes(string):
+    if string[0] == '"' and string[-1] == '"':
+        return string[1:-1]
+
+    return string
+
+
 def parse_gtf_attributes(attributes_str):
     attributes = dict()
     attribute_pairs = attributes_str.split(';')
@@ -338,9 +346,7 @@ def parse_gtf_attributes(attributes_str):
 
         key = attribute_pair[:first_space]
         value = attribute_pair[first_space + 1:]
-        if value[0] == '"' and value[-1] == '"':
-            # remove quotes
-            value = value[1:-1]
+        value = remove_double_quotes(value)
 
         existing_attributes = attributes.get(key)
         if existing_attributes:
